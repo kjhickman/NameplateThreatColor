@@ -1,4 +1,5 @@
 ## Interface: 16001
 ## Title: NameplateThreatColor
+## Dependencies: Blizzard_NamePlates
 
 NameplateThreatColor.lua
