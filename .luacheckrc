@@ -1,0 +1,29 @@
+std = "lua51"
+max_line_length = false
+
+read_globals = {
+    "C_NamePlate",
+    "CreateColorFromHexString",
+    "EventUtil",
+    "hooksecurefunc",
+    "issecretvalue",
+    "PlayerUtil",
+    "Settings",
+    "UnitCanAttack",
+    "UnitDetailedThreatSituation",
+    "UnitInParty",
+    "UnitThreatLeadSituation",
+    "UnitThreatSituation",
+}
+
+globals = { "NameplateThreatColorDB" }
+
+files["**/*.test.lua"] = {
+    new_read_globals = {},
+    globals = {
+        "GAINING_THREAT_COLOR",
+        "HIGH_THREAT_COLOR",
+        unpack(read_globals),
+    },
+    self = false,
+}
