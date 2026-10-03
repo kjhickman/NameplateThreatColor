@@ -3,28 +3,19 @@ local _, addon = ...
 local threatColors = {}
 local overlays = {}
 
-local function UpdateThreatColor(frame)
-    if frame:IsForbidden() then
-        return
-    end
-
-    local overlay = overlays[frame]
-    if overlay then
-        overlay:Hide()
-    end
-
+local function GetThreatColor(frame)
     local unit = frame.displayedUnit
     if issecretvalue(unit) or type(unit) ~= "string" or not unit:match("^nameplate%d+$") then
         return
     end
 
-    local nameplate = C_NamePlate.GetNamePlateForUnit(unit)
-    if not nameplate or nameplate.UnitFrame ~= frame then
+    local enabled = frame.displayThreatHealthBarColor
+    if issecretvalue(enabled) or not enabled or not UnitInParty("player") then
         return
     end
 
-    local enabled = frame.displayThreatHealthBarColor
-    if issecretvalue(enabled) or not enabled or not UnitInParty("player") then
+    local nameplate = C_NamePlate.GetNamePlateForUnit(unit)
+    if not nameplate or nameplate.UnitFrame ~= frame then
         return
     end
 
@@ -51,19 +42,39 @@ local function UpdateThreatColor(frame)
         end
     end
 
-    local color = threatColors[status]
+    return threatColors[status]
+end
+
+local function UpdateThreatColor(frame)
+    if frame:IsForbidden() then
+        return
+    end
+
+    local color = GetThreatColor(frame)
+    local overlay = overlays[frame]
     if not color then
+        if overlay and overlay.shown then
+            overlay.texture:Hide()
+            overlay.shown = false
+        end
         return
     end
 
     if not overlay then
         local bar = frame.healthBar
-        overlay = bar:CreateTexture(nil, "ARTWORK", nil, 0)
-        overlay:SetAllPoints(bar:GetStatusBarTexture())
+        local texture = bar:CreateTexture(nil, "ARTWORK", nil, 0)
+        texture:SetAllPoints(bar:GetStatusBarTexture())
+        overlay = { texture = texture }
         overlays[frame] = overlay
     end
-    overlay:SetColorTexture(unpack(color))
-    overlay:Show()
+    if overlay.color ~= color then
+        overlay.texture:SetColorTexture(unpack(color))
+        overlay.color = color
+    end
+    if not overlay.shown then
+        overlay.texture:Show()
+        overlay.shown = true
+    end
 end
 
 hooksecurefunc("CompactUnitFrame_UpdateHealthColor", UpdateThreatColor)

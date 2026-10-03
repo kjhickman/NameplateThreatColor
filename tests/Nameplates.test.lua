@@ -52,6 +52,73 @@ test("both warning states are yellow and reuse the overlay", function()
         assert(state.textures[1].shown and color[1] == 1 and color[2] == 1 and color[3] == 0)
         assert(#state.textures == 1)
     end
+    local texture = state.textures[1]
+    assert(texture.colorCalls == 1 and texture.showCalls == 1 and texture.hideCalls == 0)
+end)
+
+test("repeated updates across many nameplates avoid redundant texture calls", function()
+    local frames = {}
+    for index = 1, 40 do
+        local unit = "nameplate" .. index
+        state.unitThreat[unit] = index % 4
+        frames[index] = newFrame(unit)
+        state.update(frames[index])
+    end
+    for _ = 1, 100 do
+        for _, frame in ipairs(frames) do
+            state.update(frame)
+        end
+    end
+    assert(#state.textures == 40)
+    for _, texture in ipairs(state.textures) do
+        assert(texture.shown and texture.colorCalls == 1)
+        assert(texture.showCalls == 1 and texture.hideCalls == 0)
+    end
+end)
+
+test("changing threat recolors a visible overlay without hiding or showing it", function()
+    local frame = newFrame()
+    state.update(frame)
+    state.status = 1
+    state.update(frame)
+    local texture = state.textures[1]
+    assertColor(texture, 1, 1, 0)
+    assert(texture.colorCalls == 2 and texture.showCalls == 1 and texture.hideCalls == 0)
+end)
+
+test("inactive overlays hide once and reuse their color when shown again", function()
+    local frame = newFrame()
+    state.update(frame)
+    state.status = nil
+    for _ = 1, 10 do
+        state.update(frame)
+    end
+    local texture = state.textures[1]
+    assert(not texture.shown and texture.hideCalls == 1)
+    assert(texture.colorCalls == 1 and texture.showCalls == 1)
+    state.status = 3
+    state.update(frame)
+    assertColor(texture, 1, 0, 0)
+    assert(texture.colorCalls == 1 and texture.showCalls == 2 and texture.hideCalls == 1)
+end)
+
+test("palette changes while inactive are applied when the overlay returns", function()
+    local frame, native = newFrame()
+    state.update(frame)
+    native.displayThreatHealthBarColor = false
+    state.update(frame)
+    state.addon.ApplyColors({
+        secureAggroColor = "ff00ff00",
+        warningColor = "ffffff00",
+        highThreatColor = "ff0000ff",
+    })
+    local texture = state.textures[1]
+    assert(not texture.shown and texture.hideCalls == 1)
+    assert(texture.colorCalls == 1 and texture.showCalls == 1)
+    native.displayThreatHealthBarColor = true
+    state.update(frame)
+    assertColor(texture, 0, 0, 1)
+    assert(texture.colorCalls == 2 and texture.showCalls == 2 and texture.hideCalls == 1)
 end)
 
 test("tank recognition selects the threat-lead API", function()
@@ -148,17 +215,20 @@ test("turning Health Bar Color off restores the native fill", function()
     local frame, native = newFrame()
     state.update(frame)
     native.displayThreatHealthBarColor = false
-    state.threatQuery = nil
+    state.threatQuery, state.nameplateQuery = nil, nil
     state.update(frame)
     assert(not state.textures[1].shown and state.threatQuery == nil)
+    assert(state.nameplateQuery == nil)
 end)
 
 test("leaving the party restores the native fill", function()
     local frame = newFrame()
     state.update(frame)
     state.party, state.threatQuery = false, nil
+    state.nameplateQuery = nil
     state.update(frame)
     assert(not state.textures[1].shown and state.threatQuery == nil)
+    assert(state.nameplateQuery == nil)
 end)
 
 test("a nameplate reused for a friendly unit loses its custom color", function()

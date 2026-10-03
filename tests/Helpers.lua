@@ -139,7 +139,7 @@ function helpers.newFrame(unit)
         local function assertCurrentTest()
             assert(state.textures == registry, "Texture from a previous test was touched")
         end
-        local texture = {}
+        local texture = { colorCalls = 0, hideCalls = 0, showCalls = 0 }
         function texture:SetAllPoints(relativeTo)
             assertCurrentTest()
             assert(relativeTo == fill, "Overlay must follow the existing fill")
@@ -147,14 +147,17 @@ function helpers.newFrame(unit)
         end
         function texture:SetColorTexture(r, g, b)
             assertCurrentTest()
+            self.colorCalls = self.colorCalls + 1
             self.color = { r, g, b }
         end
         function texture:Hide()
             assertCurrentTest()
+            self.hideCalls = self.hideCalls + 1
             self.shown = false
         end
         function texture:Show()
             assertCurrentTest()
+            self.showCalls = self.showCalls + 1
             self.shown = true
         end
         state.textures[#state.textures + 1] = texture
