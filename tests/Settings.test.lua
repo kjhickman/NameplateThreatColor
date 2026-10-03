@@ -222,3 +222,61 @@ test("older saved palettes are preserved when the secure setting is added", func
     assert(NameplateThreatColorDB.highThreatColor == "ffff00ff")
     assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
 end)
+
+test("non-table saved databases are replaced with defaults", function()
+    for _, saved in ipairs({ false, true, 0, 12345678, "", "ff112233" }) do
+        helpers.reloadAddon(saved)
+        assert(type(NameplateThreatColorDB) == "table")
+        assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
+        assert(NameplateThreatColorDB.warningColor == "ffffff00")
+        assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
+        assert(state.registeredCategory == state.category)
+    end
+end)
+
+test("malformed saved colors are replaced without changing valid entries", function()
+    local defaults = {
+        secureAggroColor = "ff00ff00",
+        warningColor = "ffffff00",
+        highThreatColor = "ffff0000",
+    }
+    local valid = {
+        secureAggroColor = "00112233",
+        warningColor = "FF445566",
+        highThreatColor = "aB778899",
+        unrelated = {},
+    }
+    local invalid = {
+        false,
+        true,
+        12345678,
+        {},
+        "",
+        "ff0000",
+        "ff00000",
+        "ff0000000",
+        "gg000000",
+        "ff00000g",
+        "#ff00000",
+        " ff00000",
+        "ff00000\n",
+    }
+    for key, default in pairs(defaults) do
+        for _, value in ipairs(invalid) do
+            local saved = {}
+            for savedKey, savedValue in pairs(valid) do
+                saved[savedKey] = savedValue
+            end
+            saved[key] = value
+            helpers.reloadAddon(saved)
+            assert(NameplateThreatColorDB == saved)
+            for savedKey, expected in pairs(valid) do
+                assert(
+                    NameplateThreatColorDB[savedKey] == (savedKey == key and default or expected)
+                )
+            end
+            assert(state.settings["NameplateThreatColor_" .. key]:GetValue() == default)
+            assert(state.registeredCategory == state.category)
+        end
+    end
+end)

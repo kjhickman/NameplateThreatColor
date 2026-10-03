@@ -25,9 +25,12 @@ local function RegisterColorSetting(category, key, label, tooltip)
 end
 
 EventUtil.ContinueOnAddOnLoaded(addonName, function()
-    NameplateThreatColorDB = NameplateThreatColorDB or {}
+    if type(NameplateThreatColorDB) ~= "table" then
+        NameplateThreatColorDB = {}
+    end
     for key, value in pairs(defaults) do
-        if NameplateThreatColorDB[key] == nil then
+        local color = NameplateThreatColorDB[key]
+        if type(color) ~= "string" or #color ~= 8 or not color:match("^%x+$") then
             NameplateThreatColorDB[key] = value
         end
     end
