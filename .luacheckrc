@@ -18,7 +18,7 @@ read_globals = {
 
 globals = { "NameplateThreatColorDB" }
 
-files["**/*.test.lua"] = {
+files["tests/Helpers.lua"] = {
     new_read_globals = {},
     globals = {
         "GAINING_THREAT_COLOR",

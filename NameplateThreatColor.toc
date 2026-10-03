@@ -6,4 +6,5 @@
 ## Dependencies: Blizzard_NamePlates
 ## SavedVariables: NameplateThreatColorDB
 
-NameplateThreatColor.lua
+Nameplates.lua
+Settings.lua

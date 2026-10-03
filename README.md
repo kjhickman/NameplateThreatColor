@@ -13,5 +13,7 @@ Run these commands from the repository root:
 stylua .                            # Format all Lua files
 stylua --check .                    # Check formatting without changing files
 luacheck .                          # Lint all Lua files
-lua NameplateThreatColor.test.lua   # Run tests
+lua run_tests.lua   # Run tests
 ```
+
+The test runner loads the suites in `tests/`, which share WoW mocks in `tests/Helpers.lua`.
