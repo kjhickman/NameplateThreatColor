@@ -1,5 +1,8 @@
 ## Interface: 16001
 ## Title: NameplateThreatColor
+## Notes: Customize the blizzard nameplate threat colors.
+## Author: netward
+## Version: @project-version@
 ## Dependencies: Blizzard_NamePlates
 ## SavedVariables: NameplateThreatColorDB
 
