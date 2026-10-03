@@ -1,0 +1,11 @@
+package-as: NameplateThreatColor
+
+ignore:
+  - .github
+  - .gitattributes
+  - .gitignore
+  - .luacheckrc
+  - .stylua.toml
+  - opencode.jsonc
+  - run_tests.lua
+  - tests

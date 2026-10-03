@@ -1,3 +1,5 @@
+local unpack = unpack or table.unpack
+
 std = "lua51"
 max_line_length = false
 
