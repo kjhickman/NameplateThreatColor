@@ -10,10 +10,8 @@ Install [StyLua](https://github.com/JohnnyMorganz/StyLua) and
 Run these commands from the repository root:
 
 ```sh
-stylua .                            # Format all Lua files
-stylua --check .                    # Check formatting without changing files
-luacheck .                          # Lint all Lua files
-lua run_tests.lua   # Run tests
+stylua .               # Format all Lua files
+stylua --check .       # Check formatting without changing files
+luacheck .             # Lint all Lua files
+lua run_tests.lua      # Run tests
 ```
-
-The test runner loads the suites in `tests/`, which share WoW mocks in `tests/Helpers.lua`.
