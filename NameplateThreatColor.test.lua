@@ -26,7 +26,11 @@ function CreateColorFromHexString(hex)
     local r = tonumber(hex:sub(3, 4), 16) / 255
     local g = tonumber(hex:sub(5, 6), 16) / 255
     local b = tonumber(hex:sub(7, 8), 16) / 255
-    return { GetRGB = function() return r, g, b end }
+    return {
+        GetRGB = function()
+            return r, g, b
+        end,
+    }
 end
 
 Settings = { VarType = { String = "string" } }
@@ -106,14 +110,18 @@ PlayerUtil = {
 function UnitThreatSituation(player, unit)
     assert(player == "player" and nameplates[unit])
     threatQuery = "normal"
-    if unitThreat[unit] ~= nil then return unitThreat[unit] end
+    if unitThreat[unit] ~= nil then
+        return unitThreat[unit]
+    end
     return status
 end
 
 function UnitThreatLeadSituation(player, unit)
     assert(player == "player" and nameplates[unit])
     threatQuery = "tank"
-    if unitThreat[unit] ~= nil then return unitThreat[unit] end
+    if unitThreat[unit] ~= nil then
+        return unitThreat[unit]
+    end
     return status
 end
 
@@ -156,7 +164,9 @@ local function newFrame(unit)
         displayedUnit = unit or "nameplate1",
         displayThreatHealthBarColor = true,
         healthBar = bar,
-        IsForbidden = function() return false end,
+        IsForbidden = function()
+            return false
+        end,
     }
     local frame = setmetatable({}, { __index = native, __newindex = forbiddenWrite })
     nameplates[native.displayedUnit] = { UnitFrame = frame }
@@ -197,7 +207,9 @@ test("native addon settings expose three color swatches with persisted defaults"
     assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
     assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
     local count = 0
-    for _ in pairs(settings) do count = count + 1 end
+    for _ in pairs(settings) do
+        count = count + 1
+    end
     assert(count == 3)
 end)
 
@@ -295,7 +307,9 @@ for _, case in ipairs({ { "unknown", 4 }, { "secret", secret } }) do
         status = case[2]
         update(frame)
         assert(not textures[1].shown and #textures == 1)
-        if status == secret then assert(secretChecked) end
+        if status == secret then
+            assert(secretChecked)
+        end
     end)
 end
 
@@ -366,7 +380,9 @@ test("forbidden frames are not inspected", function()
     local frame = setmetatable({}, {
         __index = function(_, key)
             assert(key == "IsForbidden", "Forbidden frame fields were inspected")
-            return function() return true end
+            return function()
+                return true
+            end
         end,
     })
     update(frame)
