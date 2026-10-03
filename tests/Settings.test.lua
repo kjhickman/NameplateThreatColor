@@ -2,6 +2,7 @@ local helpers = ...
 local state = helpers.state
 local test = helpers.test
 local newFrame = helpers.newFrame
+local assertColor = helpers.assertColor
 
 test("native addon settings expose three color swatches with persisted defaults", function()
     assert(
@@ -64,8 +65,9 @@ test("changing the high-threat setting refreshes existing overlays", function()
     assert(state.settings.NameplateThreatColor_warningColor:GetValue() == "ffffff00")
 end)
 
-test("the secure picker updates either role immediately without changing warnings", function()
-    for _, role in ipairs({ false, true }) do
+for _, role in ipairs({ false, true }) do
+    local label = role and "tank" or "non-tank"
+    test("secure setting refreshes " .. label .. " overlays", function()
         state.tank = role
         local safe = newFrame("nameplate1")
         local warning = newFrame("nameplate2")
@@ -74,83 +76,110 @@ test("the secure picker updates either role immediately without changing warning
         state.update(safe)
         state.update(warning)
         state.update(danger)
+        assertColor(state.textures[1], 0, 1, 0)
         state.settings.NameplateThreatColor_secureAggroColor:SetValue("ff0000ff")
-        local color = state.textures[#state.textures - 2].color
-        assert(color[1] == 0 and color[2] == 0 and color[3] == 1)
-        color = state.textures[#state.textures - 1].color
-        assert(color[1] == 1 and color[2] == 1 and color[3] == 0)
-        color = state.textures[#state.textures].color
-        assert(color[1] == 1 and color[2] == 0 and color[3] == 0)
-    end
-    assert(NameplateThreatColorDB.secureAggroColor == "ff0000ff")
-end)
+        assertColor(state.textures[1], 0, 0, 1)
+        assertColor(state.textures[2], 1, 1, 0)
+        assertColor(state.textures[3], 1, 0, 0)
+        assert(#state.textures == 3)
+        assert(state.settings.NameplateThreatColor_secureAggroColor:GetValue() == "ff0000ff")
+        assert(NameplateThreatColorDB.secureAggroColor == "ff0000ff")
+    end)
+end
 
-test("restoring the secure picker value restores the live green fill", function()
+test("restoring the secure setting restores its live green color", function()
     state.tank, state.status = true, 0
     local frame = newFrame()
     state.update(frame)
     local setting = state.settings.NameplateThreatColor_secureAggroColor
     local previous = setting:GetValue()
+    assert(previous == "ff00ff00")
+    assertColor(state.textures[1], 0, 1, 0)
     setting:SetValue("ff0000ff")
+    assertColor(state.textures[1], 0, 0, 1)
+    assert(
+        setting:GetValue() == "ff0000ff" and NameplateThreatColorDB.secureAggroColor == "ff0000ff"
+    )
     setting:SetValue(previous)
-    local color = state.textures[1].color
-    assert(state.textures[1].shown and color[1] == 0 and color[2] == 1 and color[3] == 0)
-    assert(NameplateThreatColorDB.secureAggroColor == previous)
+    assertColor(state.textures[1], 0, 1, 0)
+    assert(setting:GetValue() == previous and NameplateThreatColorDB.secureAggroColor == previous)
 end)
 
-test("restoring a picker value on Cancel restores the live color", function()
+test("restoring the high-threat setting restores its live red color", function()
     local frame = newFrame()
     state.update(frame)
     local setting = state.settings.NameplateThreatColor_highThreatColor
     local previous = setting:GetValue()
+    assert(previous == "ffff0000")
+    assertColor(state.textures[1], 1, 0, 0)
     setting:SetValue("ff0000ff")
+    assertColor(state.textures[1], 0, 0, 1)
+    assert(
+        setting:GetValue() == "ff0000ff" and NameplateThreatColorDB.highThreatColor == "ff0000ff"
+    )
     setting:SetValue(previous)
-    local color = state.textures[1].color
-    assert(state.textures[1].shown and color[1] == 1 and color[2] == 0 and color[3] == 0)
-    assert(NameplateThreatColorDB.highThreatColor == previous)
+    assertColor(state.textures[1], 1, 0, 0)
+    assert(setting:GetValue() == previous and NameplateThreatColorDB.highThreatColor == previous)
 end)
 
-test("Cancel after reopening restores the previously accepted color", function()
+test("restoring a previous non-default setting restores that live color", function()
     local frame = newFrame()
     state.update(frame)
     local setting = state.settings.NameplateThreatColor_highThreatColor
     setting:SetValue("ff0000ff")
+    assertColor(state.textures[1], 0, 0, 1)
+    assert(
+        setting:GetValue() == "ff0000ff" and NameplateThreatColorDB.highThreatColor == "ff0000ff"
+    )
     local previous = setting:GetValue()
     setting:SetValue("ff00ff00")
+    assertColor(state.textures[1], 0, 1, 0)
+    assert(
+        setting:GetValue() == "ff00ff00" and NameplateThreatColorDB.highThreatColor == "ff00ff00"
+    )
     setting:SetValue(previous)
-    local color = state.textures[1].color
-    assert(state.textures[1].shown and color[1] == 0 and color[2] == 0 and color[3] == 1)
-    assert(NameplateThreatColorDB.highThreatColor == "ff0000ff")
+    assertColor(state.textures[1], 0, 0, 1)
+    assert(setting:GetValue() == previous and NameplateThreatColorDB.highThreatColor == previous)
 end)
 
-test("native setting defaults restore all three colors immediately", function()
-    local frame = newFrame()
-    state.update(frame)
+test("applying setting defaults restores every live threat color immediately", function()
+    state.unitThreat = { nameplate1 = 0, nameplate2 = 1, nameplate3 = 2, nameplate4 = 3 }
+    for index = 1, 4 do
+        state.update(newFrame("nameplate" .. index))
+    end
     local warning = state.settings.NameplateThreatColor_warningColor
     local high = state.settings.NameplateThreatColor_highThreatColor
     local secure = state.settings.NameplateThreatColor_secureAggroColor
-    warning:SetValue("ff00ff00")
-    high:SetValue("ff0000ff")
     secure:SetValue("ff0000ff")
-    warning:SetValue(warning.default)
-    high:SetValue(high.default)
+    warning:SetValue("ffff00ff")
+    high:SetValue("ff00ffff")
+    assertColor(state.textures[1], 0, 0, 1)
+    assertColor(state.textures[2], 1, 0, 1)
+    assertColor(state.textures[3], 1, 0, 1)
+    assertColor(state.textures[4], 0, 1, 1)
     secure:SetValue(secure.default)
+    assertColor(state.textures[1], 0, 1, 0)
+    warning:SetValue(warning.default)
+    assertColor(state.textures[2], 1, 1, 0)
+    assertColor(state.textures[3], 1, 1, 0)
+    high:SetValue(high.default)
+    assertColor(state.textures[4], 1, 0, 0)
+    assert(secure:GetValue() == "ff00ff00")
+    assert(warning:GetValue() == "ffffff00")
+    assert(high:GetValue() == "ffff0000")
     assert(NameplateThreatColorDB.warningColor == "ffffff00")
     assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
     assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
-    assert(
-        state.textures[1].shown
-            and state.textures[1].color[1] == 1
-            and state.textures[1].color[3] == 0
-    )
+    assert(#state.textures == 4)
 end)
 
-test("settings changes leave secret threat values on the native fill", function()
+test("settings changes check a secret threat sentinel and hide its overlay", function()
     local frame = newFrame()
     state.update(frame)
-    state.status = state.secret
+    assert(state.textures[1].shown)
+    state.secret, state.status, state.tank = 0, 0, true
     state.settings.NameplateThreatColor_highThreatColor:SetValue("ff0000ff")
-    assert(state.secretChecked and not state.textures[1].shown)
+    assert(state.secretChecked and not state.textures[1].shown and state.tankingQuery == nil)
 end)
 
 test("saved colors survive addon reinitialization", function()
@@ -166,10 +195,18 @@ test("saved colors survive addon reinitialization", function()
     assert(state.settings.NameplateThreatColor_warningColor:GetValue() == "ff336699")
     assert(state.settings.NameplateThreatColor_highThreatColor:GetValue() == "ff0000ff")
     assert(state.settings.NameplateThreatColor_secureAggroColor:GetValue() == "ff996633")
-    state.status = 1
-    state.update(newFrame())
-    local color = state.textures[1].color
-    assert(color[1] == 0x33 / 255 and color[2] == 0x66 / 255 and color[3] == 0x99 / 255)
+    local states = {
+        { 0, 0x99 / 255, 0x66 / 255, 0x33 / 255 },
+        { 1, 0x33 / 255, 0x66 / 255, 0x99 / 255 },
+        { 2, 0x33 / 255, 0x66 / 255, 0x99 / 255 },
+        { 3, 0, 0, 1 },
+    }
+    for index, expected in ipairs(states) do
+        state.status = expected[1]
+        state.update(newFrame("nameplate" .. index))
+        assertColor(state.textures[index], expected[2], expected[3], expected[4])
+    end
+    assert(#state.textures == 4)
 end)
 
 test("missing saved colors get defaults without overwriting existing choices", function()

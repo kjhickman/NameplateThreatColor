@@ -1,5 +1,5 @@
 local helpers = {
-    state = { secret = {}, settings = {} },
+    state = {},
     tests = 0,
 }
 local state = helpers.state
@@ -77,6 +77,8 @@ end
 
 C_NamePlate = {
     GetNamePlateForUnit = function(unit)
+        state.nameplateQuery = unit
+        assert(unit ~= state.secret, "Secret unit token passed into a game API")
         return state.nameplates[unit]
     end,
 }
@@ -133,17 +135,26 @@ function helpers.newFrame(unit)
     end
     function bar:CreateTexture(name, layer, template, sublevel)
         assert(name == nil and layer == "ARTWORK" and template == nil and sublevel == 0)
+        local registry = state.textures
+        local function assertCurrentTest()
+            assert(state.textures == registry, "Texture from a previous test was touched")
+        end
         local texture = {}
         function texture:SetAllPoints(relativeTo)
+            assertCurrentTest()
             assert(relativeTo == fill, "Overlay must follow the existing fill")
+            self.anchor = relativeTo
         end
         function texture:SetColorTexture(r, g, b)
+            assertCurrentTest()
             self.color = { r, g, b }
         end
         function texture:Hide()
+            assertCurrentTest()
             self.shown = false
         end
         function texture:Show()
+            assertCurrentTest()
             self.shown = true
         end
         state.textures[#state.textures + 1] = texture
@@ -168,12 +179,17 @@ function helpers.test(name, run)
     state.party, state.enemy, state.tank, state.status = true, true, false, 3
     state.isTanking, state.tankingQuery = true, nil
     state.threatQuery, state.secretChecked = nil, false
-    for _, setting in pairs(state.settings) do
-        setting:SetValue(setting.default)
-    end
+    state.secret, state.nameplateQuery = {}, nil
+    helpers.reloadAddon()
     run()
     helpers.tests = helpers.tests + 1
     print("ok - " .. name)
+end
+
+function helpers.assertColor(texture, r, g, b)
+    assert(texture and texture.shown, "Expected a visible overlay")
+    local color = texture.color
+    assert(color[1] == r and color[2] == g and color[3] == b, "Unexpected overlay color")
 end
 
 local function loadAddon()
@@ -188,14 +204,15 @@ function helpers.reloadAddon(saved)
     state.update, state.initialize, state.category, state.registeredCategory = nil, nil, nil, nil
     state.settings = {}
     state.addon = loadAddon()
-    assert(state.update and state.initialize)
+    assert(state.update, "Health-color post-hook was not installed")
+    assert(
+        state.initialize,
+        "Settings initialization was not deferred until addon loading completes"
+    )
+    assert(
+        NameplateThreatColorDB == saved and state.category == nil and next(state.settings) == nil
+    )
     state.initialize()
 end
-
-state.addon = loadAddon()
-assert(state.update, "Health-color post-hook was not installed")
-assert(state.initialize, "Settings initialization was not deferred until addon loading completes")
-assert(NameplateThreatColorDB == nil and state.category == nil and next(state.settings) == nil)
-state.initialize()
 
 return helpers
