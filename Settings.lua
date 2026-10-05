@@ -3,6 +3,7 @@ local addonName, addon = ...
 local defaults = {
     secureAggroColor = "ff00ff00",
     warningColor = "ffffff00",
+    urgentWarningColor = "ffff9900",
     highThreatColor = "ffff0000",
 }
 
@@ -36,24 +37,33 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
     end
     addon.ApplyColors(NameplateThreatColorDB)
 
-    local category = Settings.RegisterVerticalLayoutCategory("NameplateThreatColor")
+    local category, layout = Settings.RegisterVerticalLayoutCategory("NameplateThreatColor")
+    layout:AddInitializer(Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", {
+        name = "Requires being in a party and Nameplates > Threat Display > Health Bar Color enabled.",
+    }))
     RegisterColorSetting(
         category,
         "secureAggroColor",
         "Secure aggro color",
-        "For tanks: holding aggro with a safe threat lead. For non-tanks: no aggro and safely below the pull threshold (threat state 0), or no threat on an enemy fighting your party. Unknown threat stays unchanged. Requires a party and Nameplates > Threat Display > Health Bar Color."
+        "For tanks: holding aggro with a safe threat lead. For non-tanks: no aggro and safely below the pull threshold."
     )
     RegisterColorSetting(
         category,
         "warningColor",
-        "Gaining / losing aggro color",
-        "Color for gaining or losing aggro (threat states 1 and 2). Requires a party and Nameplates > Threat Display > Health Bar Color."
+        "Threat warning color",
+        "For tanks: a threat-lead warning. For non-tanks: high threat without holding aggro."
+    )
+    RegisterColorSetting(
+        category,
+        "urgentWarningColor",
+        "Urgent threat warning color",
+        "For tanks: a more urgent threat-lead warning. For non-tanks: holding aggro while another unit has higher threat."
     )
     RegisterColorSetting(
         category,
         "highThreatColor",
         "Pulled / lost aggro color",
-        "For non-tanks: holding aggro. For tanks: lost or unsafe aggro (threat state 3). Requires a party and Nameplates > Threat Display > Health Bar Color."
+        "For tanks: lost or unsafe aggro. For non-tanks: holding aggro."
     )
     Settings.RegisterAddOnCategory(category)
 end)

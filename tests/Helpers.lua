@@ -26,8 +26,15 @@ end
 Settings = { VarType = { String = "string" } }
 
 function Settings.RegisterVerticalLayoutCategory(name)
-    state.category = { name = name }
-    return state.category
+    state.category = { name = name, layout = { initializers = {} } }
+    function state.category.layout:AddInitializer(initializer)
+        table.insert(self.initializers, initializer)
+    end
+    return state.category, state.category.layout
+end
+
+function Settings.CreateElementInitializer(template, data)
+    return { template = template, data = data }
 end
 
 function Settings.RegisterProxySetting(owner, variable, kind, label, default, getValue, setValue)
@@ -47,6 +54,8 @@ end
 function Settings.CreateColorSwatch(owner, setting, tooltip)
     assert(owner == state.category and type(tooltip) == "string" and #tooltip > 0)
     setting.swatch = true
+    setting.tooltip = tooltip
+    owner.layout:AddInitializer(setting)
 end
 
 function Settings.RegisterAddOnCategory(owner)

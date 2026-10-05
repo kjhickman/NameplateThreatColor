@@ -8,7 +8,7 @@ test("applying a supplied palette refreshes overlays without changing saved sett
     local states = {
         { 0, 0, 0, 1 },
         { 1, 1, 0, 1 },
-        { 2, 1, 0, 1 },
+        { 2, 1, 1, 1 },
         { 3, 0, 1, 1 },
     }
     for index, expected in ipairs(states) do
@@ -19,6 +19,7 @@ test("applying a supplied palette refreshes overlays without changing saved sett
     state.addon.ApplyColors({
         secureAggroColor = "ff0000ff",
         warningColor = "ffff00ff",
+        urgentWarningColor = "ffffffff",
         highThreatColor = "ff00ffff",
     })
     for index, expected in ipairs(states) do
@@ -27,6 +28,7 @@ test("applying a supplied palette refreshes overlays without changing saved sett
     assert(#state.textures == 4)
     assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
     assert(NameplateThreatColorDB.warningColor == "ffffff00")
+    assert(NameplateThreatColorDB.urgentWarningColor == "ffff9900")
     assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
 end)
 
@@ -112,18 +114,26 @@ test("secret native health is forwarded without inspection or calculation", func
     assertColor(texture, 1, 0, 0)
 end)
 
-test("both warning states are yellow and reuse the overlay", function()
-    local frame = newFrame()
-    for _, warning in ipairs({ 1, 2 }) do
-        state.status = warning
-        state.update(frame)
-        local color = state.textures[1].color
-        assert(state.textures[1].shown and color[1] == 1 and color[2] == 1 and color[3] == 0)
+for _, role in ipairs({ false, true }) do
+    local label = role and "tank" or "non-tank"
+    test(label .. " warning states use yellow and orange while reusing the overlay", function()
+        state.tank = role
+        local frame = newFrame()
+        local states = {
+            { 1, 1, 1, 0 },
+            { 2, 1, 0.6, 0 },
+            { 1, 1, 1, 0 },
+        }
+        for _, expected in ipairs(states) do
+            state.status = expected[1]
+            state.update(frame)
+            assertColor(state.textures[1], expected[2], expected[3], expected[4])
+        end
         assert(#state.textures == 1)
-    end
-    local texture = state.textures[1]
-    assert(texture.colorCalls == 1 and texture.showCalls == 1 and texture.hideCalls == 0)
-end)
+        local texture = state.textures[1]
+        assert(texture.colorCalls == 3 and texture.showCalls == 1 and texture.hideCalls == 0)
+    end)
+end
 
 test("repeated updates across many nameplates avoid redundant texture calls", function()
     local frames = {}
@@ -180,6 +190,7 @@ test("palette changes while inactive are applied when the overlay returns", func
     state.addon.ApplyColors({
         secureAggroColor = "ff00ff00",
         warningColor = "ffffff00",
+        urgentWarningColor = "ffff9900",
         highThreatColor = "ff0000ff",
     })
     local texture = state.textures[1]
@@ -213,7 +224,7 @@ test("a non-tank losing all threat turns green until the enemy leaves combat", f
     assertColor(state.textures[1], 1, 0, 0)
     state.status = 2
     state.update(frame)
-    assertColor(state.textures[1], 1, 1, 0)
+    assertColor(state.textures[1], 1, 0.6, 0)
     state.status = nil
     for _ = 1, 10 do
         state.update(frame)
@@ -235,6 +246,7 @@ test("a non-tank with no threat on an engaged enemy uses the configured safe col
     state.addon.ApplyColors({
         secureAggroColor = "ff0000ff",
         warningColor = "ffffff00",
+        urgentWarningColor = "ffff9900",
         highThreatColor = "ffff0000",
     })
     assertColor(state.textures[1], 0, 0, 1)
@@ -328,7 +340,7 @@ test("safe, transitioning, and dangerous states use the same palette for both ro
     local states = {
         { 0, 0, 1, 0 },
         { 1, 1, 1, 0 },
-        { 2, 1, 1, 0 },
+        { 2, 1, 0.6, 0 },
         { 3, 1, 0, 0 },
         { 0, 0, 1, 0 },
     }

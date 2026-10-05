@@ -109,10 +109,11 @@ hooksecurefunc("CompactUnitFrame_UpdateHealthColor", UpdateThreatColor)
 function addon.ApplyColors(colors)
     local secure = CreateColorFromHexString(colors.secureAggroColor)
     local warning = CreateColorFromHexString(colors.warningColor)
+    local urgent = CreateColorFromHexString(colors.urgentWarningColor)
     local high = CreateColorFromHexString(colors.highThreatColor)
     threatColors[0] = { secure:GetRGB() }
     threatColors[1] = { warning:GetRGB() }
-    threatColors[2] = threatColors[1]
+    threatColors[2] = { urgent:GetRGB() }
     threatColors[3] = { high:GetRGB() }
 
     for frame in pairs(overlays) do

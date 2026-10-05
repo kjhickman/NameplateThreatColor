@@ -4,51 +4,86 @@ local test = helpers.test
 local newFrame = helpers.newFrame
 local assertColor = helpers.assertColor
 
-test("native addon settings expose three color swatches with persisted defaults", function()
+test("native addon settings expose four color swatches with persisted defaults", function()
     assert(
         state.category.name == "NameplateThreatColor" and state.registeredCategory == state.category
     )
     local warning = state.settings.NameplateThreatColor_warningColor
+    local urgent = state.settings.NameplateThreatColor_urgentWarningColor
     local high = state.settings.NameplateThreatColor_highThreatColor
     local secure = state.settings.NameplateThreatColor_secureAggroColor
-    assert(warning.swatch and high.swatch and secure.swatch)
+    assert(warning.swatch and urgent.swatch and high.swatch and secure.swatch)
     assert(secure.label == "Secure aggro color")
-    assert(warning.label == "Gaining / losing aggro color")
+    assert(warning.label == "Threat warning color")
+    assert(urgent.label == "Urgent threat warning color")
     assert(high.label == "Pulled / lost aggro color")
     assert(warning:GetValue() == "ffffff00" and high:GetValue() == "ffff0000")
+    assert(urgent:GetValue() == "ffff9900")
     assert(secure:GetValue() == "ff00ff00")
     assert(NameplateThreatColorDB.warningColor == "ffffff00")
+    assert(NameplateThreatColorDB.urgentWarningColor == "ffff9900")
     assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
     assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
     local count = 0
     for _ in pairs(state.settings) do
         count = count + 1
     end
-    assert(count == 3)
+    assert(count == 4)
 end)
 
-test("changing the warning setting updates both warning states immediately", function()
-    local first = newFrame("nameplate1")
-    local second = newFrame("nameplate2")
-    local high = newFrame("nameplate3")
-    state.unitThreat = { nameplate1 = 1, nameplate2 = 2, nameplate3 = 3 }
-    state.update(first)
-    state.update(second)
-    state.update(high)
-    state.settings.NameplateThreatColor_warningColor:SetValue("ff00ff00")
-    for index = 1, 2 do
-        local texture = state.textures[index]
-        assert(texture.shown)
-        assert(texture.color[1] == 0 and texture.color[2] == 1 and texture.color[3] == 0)
+test("a single requirements note appears above the color settings", function()
+    local initializers = state.category.layout.initializers
+    assert(#initializers == 5)
+    local note = initializers[1]
+    assert(note.template == "SettingsListSectionHeaderTemplate")
+    assert(note.data.name == "Requires a party and Nameplates > Threat Display > Health Bar Color.")
+    local keys = { "secureAggroColor", "warningColor", "urgentWarningColor", "highThreatColor" }
+    for index, key in ipairs(keys) do
+        local setting = state.settings["NameplateThreatColor_" .. key]
+        assert(initializers[index + 1] == setting)
+        assert(not setting.tooltip:find("Requires", 1, true))
+        assert(not setting.tooltip:find("Nameplates >", 1, true))
     end
-    assert(
-        state.textures[3].shown
-            and state.textures[3].color[1] == 1
-            and state.textures[3].color[2] == 0
-    )
-    assert(state.textures[3].color[3] == 0)
-    assert(#state.textures == 3 and NameplateThreatColorDB.warningColor == "ff00ff00")
 end)
+
+for _, role in ipairs({ false, true }) do
+    local label = role and "tank" or "non-tank"
+    for _, case in ipairs({ { "warningColor", 1 }, { "urgentWarningColor", 2 } }) do
+        local key, status = case[1], case[2]
+        test(key .. " independently refreshes " .. label .. " overlays", function()
+            state.tank = role
+            local defaults = {
+                { 0, 1, 0 },
+                { 1, 1, 0 },
+                { 1, 0.6, 0 },
+                { 1, 0, 0 },
+            }
+            for index, color in ipairs(defaults) do
+                local unit = "nameplate" .. index
+                state.unitThreat[unit] = index - 1
+                state.update(newFrame(unit))
+                assertColor(state.textures[index], color[1], color[2], color[3])
+            end
+            local setting = state.settings["NameplateThreatColor_" .. key]
+            setting:SetValue("ff0000ff")
+            for index, color in ipairs(defaults) do
+                if index == status + 1 then
+                    assertColor(state.textures[index], 0, 0, 1)
+                else
+                    assertColor(state.textures[index], color[1], color[2], color[3])
+                end
+            end
+            assert(NameplateThreatColorDB[key] == "ff0000ff")
+            assert(setting:GetValue() == "ff0000ff")
+            setting:SetValue(setting.default)
+            for index, color in ipairs(defaults) do
+                assertColor(state.textures[index], color[1], color[2], color[3])
+            end
+            assert(NameplateThreatColorDB[key] == setting.default)
+            assert(setting:GetValue() == setting.default and #state.textures == 4)
+        end)
+    end
+end
 
 test("changing the high-threat setting refreshes existing overlays", function()
     local frame = newFrame("nameplate1")
@@ -148,26 +183,31 @@ test("applying setting defaults restores every live threat color immediately", f
         state.update(newFrame("nameplate" .. index))
     end
     local warning = state.settings.NameplateThreatColor_warningColor
+    local urgent = state.settings.NameplateThreatColor_urgentWarningColor
     local high = state.settings.NameplateThreatColor_highThreatColor
     local secure = state.settings.NameplateThreatColor_secureAggroColor
     secure:SetValue("ff0000ff")
     warning:SetValue("ffff00ff")
+    urgent:SetValue("ffffffff")
     high:SetValue("ff00ffff")
     assertColor(state.textures[1], 0, 0, 1)
     assertColor(state.textures[2], 1, 0, 1)
-    assertColor(state.textures[3], 1, 0, 1)
+    assertColor(state.textures[3], 1, 1, 1)
     assertColor(state.textures[4], 0, 1, 1)
     secure:SetValue(secure.default)
     assertColor(state.textures[1], 0, 1, 0)
     warning:SetValue(warning.default)
     assertColor(state.textures[2], 1, 1, 0)
-    assertColor(state.textures[3], 1, 1, 0)
+    urgent:SetValue(urgent.default)
+    assertColor(state.textures[3], 1, 0.6, 0)
     high:SetValue(high.default)
     assertColor(state.textures[4], 1, 0, 0)
     assert(secure:GetValue() == "ff00ff00")
     assert(warning:GetValue() == "ffffff00")
+    assert(urgent:GetValue() == "ffff9900")
     assert(high:GetValue() == "ffff0000")
     assert(NameplateThreatColorDB.warningColor == "ffffff00")
+    assert(NameplateThreatColorDB.urgentWarningColor == "ffff9900")
     assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
     assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
     assert(#state.textures == 4)
@@ -184,21 +224,24 @@ end)
 
 test("saved colors survive addon reinitialization", function()
     state.settings.NameplateThreatColor_warningColor:SetValue("ff336699")
+    state.settings.NameplateThreatColor_urgentWarningColor:SetValue("ffcc6633")
     state.settings.NameplateThreatColor_highThreatColor:SetValue("ff0000ff")
     state.settings.NameplateThreatColor_secureAggroColor:SetValue("ff996633")
     local saved = {
         warningColor = NameplateThreatColorDB.warningColor,
+        urgentWarningColor = NameplateThreatColorDB.urgentWarningColor,
         highThreatColor = NameplateThreatColorDB.highThreatColor,
         secureAggroColor = NameplateThreatColorDB.secureAggroColor,
     }
     helpers.reloadAddon(saved)
     assert(state.settings.NameplateThreatColor_warningColor:GetValue() == "ff336699")
+    assert(state.settings.NameplateThreatColor_urgentWarningColor:GetValue() == "ffcc6633")
     assert(state.settings.NameplateThreatColor_highThreatColor:GetValue() == "ff0000ff")
     assert(state.settings.NameplateThreatColor_secureAggroColor:GetValue() == "ff996633")
     local states = {
         { 0, 0x99 / 255, 0x66 / 255, 0x33 / 255 },
         { 1, 0x33 / 255, 0x66 / 255, 0x99 / 255 },
-        { 2, 0x33 / 255, 0x66 / 255, 0x99 / 255 },
+        { 2, 0xcc / 255, 0x66 / 255, 0x33 / 255 },
         { 3, 0, 0, 1 },
     }
     for index, expected in ipairs(states) do
@@ -212,14 +255,8 @@ end)
 test("missing saved colors get defaults without overwriting existing choices", function()
     helpers.reloadAddon({ warningColor = "ff00ff00" })
     assert(NameplateThreatColorDB.warningColor == "ff00ff00")
+    assert(NameplateThreatColorDB.urgentWarningColor == "ffff9900")
     assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
-    assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
-end)
-
-test("older saved palettes are preserved when the secure setting is added", function()
-    helpers.reloadAddon({ warningColor = "ff00ffff", highThreatColor = "ffff00ff" })
-    assert(NameplateThreatColorDB.warningColor == "ff00ffff")
-    assert(NameplateThreatColorDB.highThreatColor == "ffff00ff")
     assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
 end)
 
@@ -229,6 +266,7 @@ test("non-table saved databases are replaced with defaults", function()
         assert(type(NameplateThreatColorDB) == "table")
         assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
         assert(NameplateThreatColorDB.warningColor == "ffffff00")
+        assert(NameplateThreatColorDB.urgentWarningColor == "ffff9900")
         assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
         assert(state.registeredCategory == state.category)
     end
@@ -238,11 +276,13 @@ test("malformed saved colors are replaced without changing valid entries", funct
     local defaults = {
         secureAggroColor = "ff00ff00",
         warningColor = "ffffff00",
+        urgentWarningColor = "ffff9900",
         highThreatColor = "ffff0000",
     }
     local valid = {
         secureAggroColor = "00112233",
         warningColor = "FF445566",
+        urgentWarningColor = "00AaBbCc",
         highThreatColor = "aB778899",
         unrelated = {},
     }
