@@ -2,6 +2,7 @@ local _, addon = ...
 
 local threatColors = {}
 local overlays = {}
+local partyUnits = { "party1", "party2", "party3", "party4" }
 
 local function GetThreatColor(frame)
     local unit = frame.displayedUnit
@@ -35,6 +36,19 @@ local function GetThreatColor(frame)
         return
     end
 
+    if status == nil and not isTank then
+        local inCombat = UnitAffectingCombat(unit)
+        if issecretvalue(inCombat) or not inCombat then
+            return
+        end
+        for index = 1, GetNumSubgroupMembers() do
+            local partyStatus = UnitThreatSituation(partyUnits[index], unit)
+            if not issecretvalue(partyStatus) and threatColors[partyStatus] then
+                return threatColors[0]
+            end
+        end
+    end
+
     if status == 0 and isTank then
         local isTanking = UnitDetailedThreatSituation("player", unit)
         if issecretvalue(isTanking) or isTanking ~= true then
@@ -62,7 +76,7 @@ local function UpdateThreatColor(frame)
 
     if not overlay then
         local bar = frame.healthBar
-        local texture = bar:CreateTexture(nil, "ARTWORK", nil, 0)
+        local texture = bar:CreateTexture(nil, "ARTWORK", nil, 1)
         texture:SetAllPoints(bar:GetStatusBarTexture())
         overlay = { texture = texture }
         overlays[frame] = overlay

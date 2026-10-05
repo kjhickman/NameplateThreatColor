@@ -43,6 +43,14 @@ test("highest threat is red without changing Blizzard's bar", function()
     assert(state.threatQuery == "normal")
 end)
 
+test("custom threat colors draw above Blizzard's health-bar fill", function()
+    local frame = newFrame()
+    state.update(frame)
+    local layer, sublevel = frame.healthBar:GetStatusBarTexture():GetDrawLayer()
+    local texture = state.textures[1]
+    assert(texture.layer == layer and texture.sublevel > sublevel)
+end)
+
 test("both warning states are yellow and reuse the overlay", function()
     local frame = newFrame()
     for _, warning in ipairs({ 1, 2 }) do
@@ -135,6 +143,98 @@ test("a non-tank with safe low threat uses green without a tanking query", funct
     assert(state.threatQuery == "normal" and state.tankingQuery == nil)
 end)
 
+test("a non-tank losing all threat turns green until the enemy leaves combat", function()
+    state.combat = true
+    state.partyThreat.nameplate1 = { party1 = 3 }
+    local frame = newFrame()
+    state.update(frame)
+    assertColor(state.textures[1], 1, 0, 0)
+    state.status = 2
+    state.update(frame)
+    assertColor(state.textures[1], 1, 1, 0)
+    state.status = nil
+    for _ = 1, 10 do
+        state.update(frame)
+    end
+    local texture = state.textures[1]
+    assertColor(texture, 0, 1, 0)
+    assert(state.combatQuery == "nameplate1" and state.tankingQuery == nil)
+    assert(texture.colorCalls == 3 and texture.showCalls == 1 and texture.hideCalls == 0)
+    state.combat = false
+    state.update(frame)
+    assert(not texture.shown and texture.hideCalls == 1)
+end)
+
+test("a non-tank with no threat on an engaged enemy uses the configured safe color", function()
+    state.status, state.combat = nil, true
+    state.partyThreat.nameplate1 = { party1 = 3 }
+    state.update(newFrame())
+    assertColor(state.textures[1], 0, 1, 0)
+    state.addon.ApplyColors({
+        secureAggroColor = "ff0000ff",
+        warningColor = "ffffff00",
+        highThreatColor = "ffff0000",
+    })
+    assertColor(state.textures[1], 0, 0, 1)
+end)
+
+test("other people's fighting mobs do not get the no-threat green color", function()
+    state.status, state.combat = nil, true
+    local frame = newFrame()
+    state.update(frame)
+    assert(#state.textures == 0)
+    state.status = 3
+    state.update(frame)
+    state.status = nil
+    state.update(frame)
+    assert(not state.textures[1].shown)
+end)
+
+test("any known party threat state confirms the no-threat fallback", function()
+    state.status, state.combat = nil, true
+    local frame = newFrame()
+    for status = 0, 3 do
+        state.partyThreat.nameplate1 = { party4 = status }
+        state.update(frame)
+        assertColor(state.textures[1], 0, 1, 0)
+    end
+    assert(#state.partyThreatQueries == 16)
+end)
+
+test("secret or unknown party threat does not confirm engagement", function()
+    state.status, state.combat = nil, true
+    local frame = newFrame()
+    state.partyThreat.nameplate1 = { party1 = state.secret, party2 = 4 }
+    state.update(frame)
+    assert(state.secretChecked and #state.textures == 0)
+end)
+
+test("party threat on one mob does not color another mob green", function()
+    state.status, state.combat = nil, true
+    state.partyThreat.nameplate1 = { party1 = 3 }
+    state.update(newFrame("nameplate1"))
+    assertColor(state.textures[1], 0, 1, 0)
+    state.update(newFrame("nameplate2"))
+    assert(#state.textures == 1)
+end)
+
+test("nil tank threat stays unchanged even while the enemy is in combat", function()
+    state.tank, state.combat = true, true
+    local frame = newFrame()
+    state.update(frame)
+    state.status = nil
+    state.update(frame)
+    assert(not state.textures[1].shown and state.combatQuery == nil)
+end)
+
+test("a secret combat state hides the no-threat color", function()
+    local frame = newFrame()
+    state.update(frame)
+    state.status, state.combat = nil, state.secret
+    state.update(frame)
+    assert(state.secretChecked and not state.textures[1].shown)
+end)
+
 test("secure tanks use green only while actually holding aggro", function()
     state.tank, state.status = true, 0
     local frame = newFrame()
@@ -187,6 +287,7 @@ end)
 
 for _, case in ipairs({ { "unknown", 4 }, { "secret", 0 } }) do
     test(case[1] .. " threat hides a previous overlay", function()
+        state.combat = true
         local frame = newFrame()
         state.update(frame)
         assert(state.textures[1].shown)
@@ -203,7 +304,7 @@ for _, case in ipairs({ { "unknown", 4 }, { "secret", 0 } }) do
     end)
 end
 
-test("nil threat hides a previous overlay", function()
+test("nil threat on an idle enemy hides a previous overlay", function()
     local frame = newFrame()
     state.update(frame)
     state.status = nil

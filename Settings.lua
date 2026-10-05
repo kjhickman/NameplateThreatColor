@@ -41,7 +41,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
         category,
         "secureAggroColor",
         "Secure aggro color",
-        "For tanks: holding aggro with a safe threat lead. For non-tanks: no aggro and safely below the pull threshold (threat state 0). Unknown threat stays unchanged. Requires a party and Nameplates > Threat Display > Health Bar Color."
+        "For tanks: holding aggro with a safe threat lead. For non-tanks: no aggro and safely below the pull threshold (threat state 0), or no threat on an enemy fighting your party. Unknown threat stays unchanged. Requires a party and Nameplates > Threat Display > Health Bar Color."
     )
     RegisterColorSetting(
         category,

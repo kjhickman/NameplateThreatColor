@@ -93,14 +93,30 @@ function UnitCanAttack(player, unit)
     return state.enemy
 end
 
+function UnitAffectingCombat(unit)
+    assert(state.nameplates[unit])
+    state.combatQuery = unit
+    return state.combat
+end
+
 PlayerUtil = {
     IsPlayerEffectivelyTank = function()
         return state.tank
     end,
 }
 
+function GetNumSubgroupMembers()
+    return state.partyMembers
+end
+
 function UnitThreatSituation(player, unit)
-    assert(player == "player" and state.nameplates[unit])
+    assert(state.nameplates[unit])
+    if player ~= "player" then
+        assert(player:match("^party%d+$"))
+        state.partyThreatQueries[#state.partyThreatQueries + 1] = { player, unit }
+        local threats = state.partyThreat[unit]
+        return threats and threats[player]
+    end
     state.threatQuery = "normal"
     if state.unitThreat[unit] ~= nil then
         return state.unitThreat[unit]
@@ -125,6 +141,9 @@ end
 
 function helpers.newFrame(unit)
     local fill = { GetWidth = forbiddenWrite }
+    function fill:GetDrawLayer()
+        return "ARTWORK", 0
+    end
     local bar = {
         GetStatusBarColor = forbiddenWrite,
         SetStatusBarColor = forbiddenWrite,
@@ -134,12 +153,18 @@ function helpers.newFrame(unit)
         return fill
     end
     function bar:CreateTexture(name, layer, template, sublevel)
-        assert(name == nil and layer == "ARTWORK" and template == nil and sublevel == 0)
+        assert(name == nil and layer == "ARTWORK" and template == nil)
         local registry = state.textures
         local function assertCurrentTest()
             assert(state.textures == registry, "Texture from a previous test was touched")
         end
-        local texture = { colorCalls = 0, hideCalls = 0, showCalls = 0 }
+        local texture = {
+            colorCalls = 0,
+            hideCalls = 0,
+            showCalls = 0,
+            layer = layer,
+            sublevel = sublevel,
+        }
         function texture:SetAllPoints(relativeTo)
             assertCurrentTest()
             assert(relativeTo == fill, "Overlay must follow the existing fill")
@@ -180,6 +205,8 @@ end
 function helpers.test(name, run)
     state.textures, state.nameplates, state.unitThreat = {}, {}, {}
     state.party, state.enemy, state.tank, state.status = true, true, false, 3
+    state.combat, state.combatQuery = false, nil
+    state.partyMembers, state.partyThreat, state.partyThreatQueries = 4, {}, {}
     state.isTanking, state.tankingQuery = true, nil
     state.threatQuery, state.secretChecked = nil, false
     state.secret, state.nameplateQuery = {}, nil
