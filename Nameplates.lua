@@ -5,6 +5,8 @@ local overlays = {}
 local partyUnits = { "party1", "party2", "party3", "party4" }
 
 local function GetThreatColor(frame)
+    -- Reject restricted (secret) values before inspecting them or branching on them.
+    -- Unusable threat data leaves Blizzard's native color visible.
     local unit = frame.displayedUnit
     if issecretvalue(unit) or type(unit) ~= "string" or not unit:match("^nameplate%d+$") then
         return
@@ -15,6 +17,7 @@ local function GetThreatColor(frame)
         return
     end
 
+    -- Frames are recycled; only color the frame currently owned by this nameplate unit.
     local nameplate = C_NamePlate.GetNamePlateForUnit(unit)
     if not nameplate or nameplate.UnitFrame ~= frame then
         return
@@ -25,6 +28,10 @@ local function GetThreatColor(frame)
         return
     end
 
+    -- These APIs report different per-player states, not a shared state for the mob.
+    -- Tanks: 0 = safe lead, 1/2 = weaker leads, 3 = unsafe/not highest threat.
+    -- Non-tanks: 0 = low threat, 1 = high threat/no aggro, 2 = aggro/not highest
+    -- threat, 3 = aggro/highest threat. Highest threat does not guarantee actual aggro.
     local isTank = PlayerUtil.IsPlayerEffectivelyTank()
     local status
     if isTank then
@@ -36,6 +43,8 @@ local function GetThreatColor(frame)
         return
     end
 
+    -- A missing non-tank threat entry is safe only when known party threat confirms
+    -- this engaged enemy is fighting our group, rather than someone else's.
     if status == nil and not isTank then
         local inCombat = UnitAffectingCombat(unit)
         if issecretvalue(inCombat) or not inCombat then
@@ -49,6 +58,8 @@ local function GetThreatColor(frame)
         end
     end
 
+    -- Confirm actual aggro before showing a tank's safe color. States 1/2 remain
+    -- threat-lead warnings and do not guarantee the tank is being attacked.
     if status == 0 and isTank then
         local isTanking = UnitDetailedThreatSituation("player", unit)
         if issecretvalue(isTanking) or isTanking ~= true then
@@ -74,6 +85,8 @@ local function UpdateThreatColor(frame)
         return
     end
 
+    -- Use an addon-owned bar above the native fill instead of changing Blizzard's
+    -- bar or textures. Reusing its art preserves the original shading and borders.
     local bar = frame.healthBar
     if not overlay then
         local overlayBar = CreateFrame("StatusBar", nil, bar)
@@ -92,8 +105,11 @@ local function UpdateThreatColor(frame)
         overlay = { bar = overlayBar }
         overlays[frame] = overlay
     end
+    -- Forward native health values, including secret values, directly to the renderer
+    -- without inspecting or calculating with them in Lua.
     overlay.bar:SetMinMaxValues(bar:GetMinMaxValues())
     overlay.bar:SetValue(bar:GetValue())
+    -- Shared color-table identity avoids redundant recoloring between palette changes.
     if overlay.color ~= color then
         overlay.bar:SetStatusBarColor(unpack(color))
         overlay.color = color
@@ -104,6 +120,7 @@ local function UpdateThreatColor(frame)
     end
 end
 
+-- Run after Blizzard's normal update without replacing its health-color logic.
 hooksecurefunc("CompactUnitFrame_UpdateHealthColor", UpdateThreatColor)
 
 function addon.ApplyColors(colors)
