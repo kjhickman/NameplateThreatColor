@@ -51,6 +51,30 @@ test("custom threat colors draw above Blizzard's health-bar fill", function()
     assert(texture.layer == layer and texture.sublevel > sublevel)
 end)
 
+test("the overlay reuses Blizzard's atlas and tints it without flattening it", function()
+    local frame = newFrame()
+    local fill = frame.healthBar:GetStatusBarTexture()
+    state.update(frame)
+    local texture = state.textures[1]
+    assert(texture.atlas == fill:GetAtlas() and texture.file == nil)
+    assertColor(texture, 1, 0, 0)
+    state.status = 1
+    state.update(frame)
+    assertColor(texture, 1, 1, 0)
+    assert(texture.atlas == fill:GetAtlas() and texture.atlasCalls == 1)
+end)
+
+test("classic-style overlays reuse Blizzard's texture file", function()
+    local frame = newFrame()
+    local fill = frame.healthBar:GetStatusBarTexture()
+    fill.atlas = nil
+    state.update(frame)
+    local texture = state.textures[1]
+    assert(texture.file == fill:GetTexture() and texture.atlas == nil)
+    assert(texture.textureCalls == 1 and texture.atlasCalls == 0)
+    assertColor(texture, 1, 0, 0)
+end)
+
 test("both warning states are yellow and reuse the overlay", function()
     local frame = newFrame()
     for _, warning in ipairs({ 1, 2 }) do
@@ -81,6 +105,7 @@ test("repeated updates across many nameplates avoid redundant texture calls", fu
     for _, texture in ipairs(state.textures) do
         assert(texture.shown and texture.colorCalls == 1)
         assert(texture.showCalls == 1 and texture.hideCalls == 0)
+        assert(texture.atlasCalls + texture.textureCalls == 1)
     end
 end)
 

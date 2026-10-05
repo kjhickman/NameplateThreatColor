@@ -140,9 +140,20 @@ function UnitDetailedThreatSituation(player, unit)
 end
 
 function helpers.newFrame(unit)
-    local fill = { GetWidth = forbiddenWrite }
+    local fill = {
+        GetWidth = forbiddenWrite,
+        GetTexCoord = forbiddenWrite,
+        atlas = "test-nameplate-bar",
+        file = 12345,
+    }
     function fill:GetDrawLayer()
         return "ARTWORK", 0
+    end
+    function fill:GetAtlas()
+        return self.atlas
+    end
+    function fill:GetTexture()
+        return self.file
     end
     local bar = {
         GetStatusBarColor = forbiddenWrite,
@@ -164,13 +175,26 @@ function helpers.newFrame(unit)
             showCalls = 0,
             layer = layer,
             sublevel = sublevel,
+            atlasCalls = 0,
+            textureCalls = 0,
+            SetColorTexture = forbiddenWrite,
         }
         function texture:SetAllPoints(relativeTo)
             assertCurrentTest()
             assert(relativeTo == fill, "Overlay must follow the existing fill")
             self.anchor = relativeTo
         end
-        function texture:SetColorTexture(r, g, b)
+        function texture:SetAtlas(atlas)
+            assertCurrentTest()
+            self.atlasCalls = self.atlasCalls + 1
+            self.atlas, self.file = atlas, nil
+        end
+        function texture:SetTexture(file)
+            assertCurrentTest()
+            self.textureCalls = self.textureCalls + 1
+            self.file, self.atlas = file, nil
+        end
+        function texture:SetVertexColor(r, g, b)
             assertCurrentTest()
             self.colorCalls = self.colorCalls + 1
             self.color = { r, g, b }
