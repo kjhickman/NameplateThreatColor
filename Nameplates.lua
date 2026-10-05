@@ -68,32 +68,38 @@ local function UpdateThreatColor(frame)
     local overlay = overlays[frame]
     if not color then
         if overlay and overlay.shown then
-            overlay.texture:Hide()
+            overlay.bar:Hide()
             overlay.shown = false
         end
         return
     end
 
+    local bar = frame.healthBar
     if not overlay then
-        local bar = frame.healthBar
+        local overlayBar = CreateFrame("StatusBar", nil, bar)
+        overlayBar:SetAllPoints(bar)
+        overlayBar:SetFrameLevel(bar:GetFrameLevel())
         local fill = bar:GetStatusBarTexture()
-        local texture = bar:CreateTexture(nil, "ARTWORK", nil, 1)
+        local texture = overlayBar:CreateTexture(nil, "ARTWORK", nil, 1)
         local atlas = fill:GetAtlas()
         if atlas then
             texture:SetAtlas(atlas)
         else
             texture:SetTexture(fill:GetTexture())
         end
-        texture:SetAllPoints(fill)
-        overlay = { texture = texture }
+        texture:SetAllPoints(overlayBar)
+        overlayBar:SetStatusBarTexture(texture)
+        overlay = { bar = overlayBar }
         overlays[frame] = overlay
     end
+    overlay.bar:SetMinMaxValues(bar:GetMinMaxValues())
+    overlay.bar:SetValue(bar:GetValue())
     if overlay.color ~= color then
-        overlay.texture:SetVertexColor(unpack(color))
+        overlay.bar:SetStatusBarColor(unpack(color))
         overlay.color = color
     end
     if not overlay.shown then
-        overlay.texture:Show()
+        overlay.bar:Show()
         overlay.shown = true
     end
 end

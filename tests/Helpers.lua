@@ -139,6 +139,38 @@ function UnitDetailedThreatSituation(player, unit)
     return state.isTanking
 end
 
+function CreateFrame(kind, name, parent)
+    assert(kind == "StatusBar" and name == nil and parent)
+    local bar = { parent = parent, CreateTexture = parent.CreateTexture }
+    function bar:SetAllPoints(relativeTo)
+        assert(relativeTo == parent, "Overlay bar must cover the full native bar")
+        self.anchor = relativeTo
+    end
+    function bar:SetFrameLevel(level)
+        self.level = level
+    end
+    function bar:SetStatusBarTexture(texture)
+        assert(texture.owner == self, "Native textures must not be reparented")
+        self.texture = texture
+    end
+    function bar:SetMinMaxValues(minimum, maximum)
+        self.minimum, self.maximum = minimum, maximum
+    end
+    function bar:SetValue(value)
+        self.value = value
+    end
+    function bar:SetStatusBarColor(...)
+        self.texture:SetVertexColor(...)
+    end
+    function bar:Hide()
+        self.texture:Hide()
+    end
+    function bar:Show()
+        self.texture:Show()
+    end
+    return bar
+end
+
 function helpers.newFrame(unit)
     local fill = {
         GetWidth = forbiddenWrite,
@@ -158,13 +190,26 @@ function helpers.newFrame(unit)
     local bar = {
         GetStatusBarColor = forbiddenWrite,
         SetStatusBarColor = forbiddenWrite,
-        GetValue = forbiddenWrite,
+        minimum = 0,
+        maximum = 100,
+        value = 100,
     }
     function bar:GetStatusBarTexture()
         return fill
     end
+    function bar:GetFrameLevel()
+        return 5
+    end
+    function bar:GetMinMaxValues()
+        return self.minimum, self.maximum
+    end
+    function bar:GetValue()
+        return self.value
+    end
     function bar:CreateTexture(name, layer, template, sublevel)
         assert(name == nil and layer == "ARTWORK" and template == nil)
+        local owner = self
+        assert(owner.parent == bar, "Texture must belong to the addon-owned status bar")
         local registry = state.textures
         local function assertCurrentTest()
             assert(state.textures == registry, "Texture from a previous test was touched")
@@ -177,11 +222,12 @@ function helpers.newFrame(unit)
             sublevel = sublevel,
             atlasCalls = 0,
             textureCalls = 0,
+            owner = owner,
             SetColorTexture = forbiddenWrite,
         }
         function texture:SetAllPoints(relativeTo)
             assertCurrentTest()
-            assert(relativeTo == fill, "Overlay must follow the existing fill")
+            assert(relativeTo == owner, "The status-bar renderer must manage the overlay fill")
             self.anchor = relativeTo
         end
         function texture:SetAtlas(atlas)

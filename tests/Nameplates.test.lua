@@ -39,7 +39,8 @@ test("highest threat is red without changing Blizzard's bar", function()
     local frame = newFrame()
     state.update(frame)
     assertColor(state.textures[1], 1, 0, 0)
-    assert(state.textures[1].anchor == frame.healthBar:GetStatusBarTexture())
+    local overlay = state.textures[1].owner
+    assert(overlay.anchor == frame.healthBar and state.textures[1].anchor == overlay)
     assert(state.threatQuery == "normal")
 end)
 
@@ -49,6 +50,7 @@ test("custom threat colors draw above Blizzard's health-bar fill", function()
     local layer, sublevel = frame.healthBar:GetStatusBarTexture():GetDrawLayer()
     local texture = state.textures[1]
     assert(texture.layer == layer and texture.sublevel > sublevel)
+    assert(texture.owner.level == frame.healthBar:GetFrameLevel())
 end)
 
 test("the overlay reuses Blizzard's atlas and tints it without flattening it", function()
@@ -72,6 +74,41 @@ test("classic-style overlays reuse Blizzard's texture file", function()
     local texture = state.textures[1]
     assert(texture.file == fill:GetTexture() and texture.atlas == nil)
     assert(texture.textureCalls == 1 and texture.atlasCalls == 0)
+    assertColor(texture, 1, 0, 0)
+end)
+
+test("WoW's status-bar renderer receives native health without stretching the texture", function()
+    for index, useAtlas in ipairs({ true, false }) do
+        local frame = newFrame("nameplate" .. index)
+        local native = frame.healthBar
+        if not useAtlas then
+            native:GetStatusBarTexture().atlas = nil
+        end
+        for _, value in ipairs({ 100, 50, 10, 100 }) do
+            native.value = value
+            state.update(frame)
+            local texture = state.textures[index]
+            local overlay = texture.owner
+            assert(overlay.anchor == native and texture.anchor == overlay)
+            assert(overlay.minimum == native.minimum and overlay.maximum == native.maximum)
+            assert(overlay.value == value)
+        end
+        native.maximum, native.value = 200, 150
+        state.update(frame)
+        local texture = state.textures[index]
+        assert(texture.owner.maximum == 200 and texture.owner.value == 150)
+        assertColor(texture, 1, 0, 0)
+        assert(texture.colorCalls == 1 and texture.showCalls == 1 and texture.hideCalls == 0)
+    end
+end)
+
+test("secret native health is forwarded without inspection or calculation", function()
+    local frame = newFrame()
+    frame.healthBar.maximum, frame.healthBar.value = state.secret, state.secret
+    state.update(frame)
+    local texture = state.textures[1]
+    assert(texture.owner.maximum == state.secret and texture.owner.value == state.secret)
+    assert(not state.secretChecked)
     assertColor(texture, 1, 0, 0)
 end)
 

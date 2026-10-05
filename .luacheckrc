@@ -6,6 +6,7 @@ max_line_length = false
 read_globals = {
     "C_NamePlate",
     "CreateColorFromHexString",
+    "CreateFrame",
     "EventUtil",
     "GetNumSubgroupMembers",
     "hooksecurefunc",
