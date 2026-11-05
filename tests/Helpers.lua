@@ -136,10 +136,11 @@ end
 function UnitThreatLeadSituation(player, unit)
     assert(player == "player" and state.nameplates[unit])
     state.threatQuery = "tank"
-    if state.unitThreat[unit] ~= nil then
-        return state.unitThreat[unit]
+    state.threatLeadQuery = unit
+    if state.unitThreatLead[unit] ~= nil then
+        return state.unitThreatLead[unit]
     end
-    return state.status
+    return state.leadStatus
 end
 
 function UnitDetailedThreatSituation(player, unit)
@@ -283,6 +284,7 @@ end
 
 function helpers.test(name, run)
     state.textures, state.nameplates, state.unitThreat = {}, {}, {}
+    state.unitThreatLead, state.leadStatus, state.threatLeadQuery = {}, 3, nil
     state.party, state.enemy, state.tank, state.status = true, true, false, 3
     state.combat, state.combatQuery = false, nil
     state.partyMembers, state.partyThreat, state.partyThreatQueries = 4, {}, {}

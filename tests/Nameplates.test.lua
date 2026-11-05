@@ -208,6 +208,14 @@ test("tank recognition selects the threat-lead API", function()
     assert(state.threatQuery == "tank" and state.textures[1].shown)
 end)
 
+test("secret detailed threat does not suppress a secure tank's green color", function()
+    state.tank, state.leadStatus, state.isTanking = true, 0, state.secret
+    state.update(newFrame())
+    assertColor(state.textures[1], 0, 1, 0)
+    assert(state.threatLeadQuery == "nameplate1" and state.threatQuery == "normal")
+    assert(state.tankingQuery == nil)
+end)
+
 test("a non-tank with safe low threat uses green without a tanking query", function()
     state.status = 0
     state.update(newFrame())
@@ -296,7 +304,7 @@ test("nil tank threat stays unchanged even while the enemy is in combat", functi
     state.tank, state.combat = true, true
     local frame = newFrame()
     state.update(frame)
-    state.status = nil
+    state.leadStatus = nil
     state.update(frame)
     assert(not state.textures[1].shown and state.combatQuery == nil)
 end)
@@ -309,31 +317,57 @@ test("a secret combat state hides the no-threat color", function()
     assert(state.secretChecked and not state.textures[1].shown)
 end)
 
-test("secure tanks use green only while actually holding aggro", function()
-    state.tank, state.status = true, 0
+test("secure tanks use green only while normal threat confirms holding aggro", function()
+    state.tank, state.leadStatus = true, 0
     local frame = newFrame()
-    state.update(frame)
-    local color = state.textures[1].color
-    assert(state.textures[1].shown and color[1] == 0 and color[2] == 1 and color[3] == 0)
-    assert(state.threatQuery == "tank" and state.tankingQuery == "nameplate1")
-    state.isTanking = false
-    state.update(frame)
-    assert(not state.textures[1].shown)
+    for _, status in ipairs({ 2, 3 }) do
+        state.status = status
+        state.update(frame)
+        assertColor(state.textures[1], 0, 1, 0)
+    end
+    assert(state.threatLeadQuery == "nameplate1" and state.threatQuery == "normal")
+    assert(state.tankingQuery == nil)
+    for _, status in ipairs({ 0, 1, 4 }) do
+        state.status = status
+        state.update(frame)
+        assert(not state.textures[1].shown)
+    end
 end)
 
-test("a secret tanking sentinel is checked and hides the secure color", function()
-    state.tank, state.status = true, 0
+test("secret normal threat is checked and hides the secure tank color", function()
+    state.tank, state.leadStatus = true, 0
     local frame = newFrame()
     state.update(frame)
-    state.isTanking = state.secret
+    state.status = state.secret
     state.update(frame)
-    assert(state.secretChecked and not state.textures[1].shown)
+    assert(state.secretChecked and not state.textures[1].shown and state.tankingQuery == nil)
 end)
 
-test("missing tanking confirmation does not show the secure color", function()
-    state.tank, state.status, state.isTanking = true, 0, nil
+test("missing normal threat confirmation does not show the secure tank color", function()
+    state.tank, state.leadStatus, state.status = true, 0, nil
     state.update(newFrame())
-    assert(#state.textures == 0 and state.tankingQuery == "nameplate1")
+    assert(#state.textures == 0 and state.threatQuery == "normal" and state.tankingQuery == nil)
+end)
+
+test("tank confirmation uses the same mob as the threat-lead query", function()
+    state.tank = true
+    state.unitThreatLead = { nameplate1 = 0, nameplate2 = 0 }
+    state.unitThreat = { nameplate1 = 3, nameplate2 = 0 }
+    state.update(newFrame("nameplate1"))
+    assertColor(state.textures[1], 0, 1, 0)
+    state.update(newFrame("nameplate2"))
+    assert(#state.textures == 1)
+end)
+
+test("tank warning and lost-aggro colors do not require normal threat confirmation", function()
+    state.tank, state.status, state.isTanking = true, state.secret, state.secret
+    local frame = newFrame()
+    for _, status in ipairs({ 1, 2, 3 }) do
+        state.leadStatus = status
+        state.update(frame)
+        assertColor(state.textures[1], 1, status == 3 and 0 or 1, 0)
+        assert(state.threatQuery == "tank" and state.tankingQuery == nil)
+    end
 end)
 
 test("safe, transitioning, and dangerous states use the same palette for both roles", function()
@@ -348,7 +382,8 @@ test("safe, transitioning, and dangerous states use the same palette for both ro
         state.tank = role
         local frame = newFrame()
         for _, expected in ipairs(states) do
-            state.status = expected[1]
+            state.status = role and 3 or expected[1]
+            state.leadStatus = expected[1]
             state.update(frame)
             local texture = state.textures[#state.textures]
             local color = texture.color
@@ -368,6 +403,7 @@ for _, case in ipairs({ { "unknown", 4 }, { "secret", 0 } }) do
         if case[1] == "secret" then
             state.secret = case[2]
             state.tank = true
+            state.leadStatus = case[2]
         end
         state.status = case[2]
         state.update(frame)

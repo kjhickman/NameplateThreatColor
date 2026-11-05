@@ -107,7 +107,12 @@ for _, role in ipairs({ false, true }) do
         local safe = newFrame("nameplate1")
         local warning = newFrame("nameplate2")
         local danger = newFrame("nameplate3")
-        state.unitThreat = { nameplate1 = 0, nameplate2 = 1, nameplate3 = 3 }
+        local threats = { nameplate1 = 0, nameplate2 = 1, nameplate3 = 3 }
+        if role then
+            state.unitThreatLead = threats
+        else
+            state.unitThreat = threats
+        end
         state.update(safe)
         state.update(warning)
         state.update(danger)
@@ -123,7 +128,7 @@ for _, role in ipairs({ false, true }) do
 end
 
 test("restoring the secure setting restores its live green color", function()
-    state.tank, state.status = true, 0
+    state.tank, state.leadStatus = true, 0
     local frame = newFrame()
     state.update(frame)
     local setting = state.settings.NameplateThreatColor_secureAggroColor
@@ -217,7 +222,7 @@ test("settings changes check a secret threat sentinel and hide its overlay", fun
     local frame = newFrame()
     state.update(frame)
     assert(state.textures[1].shown)
-    state.secret, state.status, state.tank = 0, 0, true
+    state.secret, state.leadStatus, state.tank = 0, 0, true
     state.settings.NameplateThreatColor_highThreatColor:SetValue("ff0000ff")
     assert(state.secretChecked and not state.textures[1].shown and state.tankingQuery == nil)
 end)

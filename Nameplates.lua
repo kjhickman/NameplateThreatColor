@@ -61,8 +61,8 @@ local function GetThreatColor(frame)
     -- Confirm actual aggro before showing a tank's safe color. States 1/2 remain
     -- threat-lead warnings and do not guarantee the tank is being attacked.
     if status == 0 and isTank then
-        local isTanking = UnitDetailedThreatSituation("player", unit)
-        if issecretvalue(isTanking) or isTanking ~= true then
+        local tankingStatus = UnitThreatSituation("player", unit)
+        if issecretvalue(tankingStatus) or (tankingStatus ~= 2 and tankingStatus ~= 3) then
             return
         end
     end
