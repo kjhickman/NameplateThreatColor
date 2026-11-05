@@ -125,7 +125,11 @@ for _, role in ipairs({ false, true }) do
             { 1, 1, 1, 0 },
         }
         for _, expected in ipairs(states) do
-            state.status = expected[1]
+            if role then
+                state.leadStatus = expected[1]
+            else
+                state.status = expected[1]
+            end
             state.update(frame)
             assertColor(state.textures[1], expected[2], expected[3], expected[4])
         end
@@ -362,10 +366,10 @@ end)
 test("tank warning and lost-aggro colors do not require normal threat confirmation", function()
     state.tank, state.status, state.isTanking = true, state.secret, state.secret
     local frame = newFrame()
-    for _, status in ipairs({ 1, 2, 3 }) do
-        state.leadStatus = status
+    for _, expected in ipairs({ { 1, 1, 1, 0 }, { 2, 1, 0.6, 0 }, { 3, 1, 0, 0 } }) do
+        state.leadStatus = expected[1]
         state.update(frame)
-        assertColor(state.textures[1], 1, status == 3 and 0 or 1, 0)
+        assertColor(state.textures[1], expected[2], expected[3], expected[4])
         assert(state.threatQuery == "tank" and state.tankingQuery == nil)
     end
 end)

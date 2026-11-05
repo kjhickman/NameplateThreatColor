@@ -36,7 +36,10 @@ test("a single requirements note appears above the color settings", function()
     assert(#initializers == 5)
     local note = initializers[1]
     assert(note.template == "SettingsListSectionHeaderTemplate")
-    assert(note.data.name == "Requires a party and Nameplates > Threat Display > Health Bar Color.")
+    assert(
+        note.data.name
+            == "Requires being in a party and Nameplates > Threat Display > Health Bar Color enabled."
+    )
     local keys = { "secureAggroColor", "warningColor", "urgentWarningColor", "highThreatColor" }
     for index, key in ipairs(keys) do
         local setting = state.settings["NameplateThreatColor_" .. key]
@@ -60,7 +63,11 @@ for _, role in ipairs({ false, true }) do
             }
             for index, color in ipairs(defaults) do
                 local unit = "nameplate" .. index
-                state.unitThreat[unit] = index - 1
+                if role then
+                    state.unitThreatLead[unit] = index - 1
+                else
+                    state.unitThreat[unit] = index - 1
+                end
                 state.update(newFrame(unit))
                 assertColor(state.textures[index], color[1], color[2], color[3])
             end
