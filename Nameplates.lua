@@ -4,6 +4,9 @@ local threatColors = {}
 local overlays = {}
 local partyUnits = { "party1", "party2", "party3", "party4" }
 
+-- nil follows the player's live role; true or false pins it to a locked choice.
+local lockedRole
+
 local function GetThreatColor(frame)
     -- Reject restricted (secret) values before inspecting them or branching on them.
     -- Unusable threat data leaves Blizzard's native color visible.
@@ -28,11 +31,17 @@ local function GetThreatColor(frame)
         return
     end
 
+    -- A locked role keeps these colors consistent across stance, form or
+    -- specialization changes that would otherwise flip the live role mid-fight.
+    local isTank = lockedRole
+    if isTank == nil then
+        isTank = PlayerUtil.IsPlayerEffectivelyTank()
+    end
+
     -- These APIs report different per-player states, not a shared state for the mob.
     -- Tanks: 0 = safe lead, 1/2 = weaker leads, 3 = unsafe/not highest threat.
     -- Non-tanks: 0 = low threat, 1 = high threat/no aggro, 2 = aggro/not highest
     -- threat, 3 = aggro/highest threat. Highest threat does not guarantee actual aggro.
-    local isTank = PlayerUtil.IsPlayerEffectivelyTank()
     local status
     if isTank then
         status = UnitThreatLeadSituation("player", unit)
@@ -120,8 +129,26 @@ local function UpdateThreatColor(frame)
     end
 end
 
+local function RefreshOverlays()
+    for frame in pairs(overlays) do
+        UpdateThreatColor(frame)
+    end
+end
+
 -- Run after Blizzard's normal update without replacing its health-color logic.
 hooksecurefunc("CompactUnitFrame_UpdateHealthColor", UpdateThreatColor)
+
+function addon.ApplyRoleLock(role)
+    if role == "tank" then
+        lockedRole = true
+    elseif role == "nontank" then
+        lockedRole = false
+    else
+        lockedRole = nil
+    end
+
+    RefreshOverlays()
+end
 
 function addon.ApplyColors(colors)
     local secure = CreateColorFromHexString(colors.secureAggroColor)
@@ -133,7 +160,5 @@ function addon.ApplyColors(colors)
     threatColors[2] = { urgent:GetRGB() }
     threatColors[3] = { high:GetRGB() }
 
-    for frame in pairs(overlays) do
-        UpdateThreatColor(frame)
-    end
+    RefreshOverlays()
 end

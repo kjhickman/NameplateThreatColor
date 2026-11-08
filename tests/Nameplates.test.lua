@@ -212,6 +212,68 @@ test("tank recognition selects the threat-lead API", function()
     assert(state.threatQuery == "tank" and state.textures[1].shown)
 end)
 
+test("a locked tank role uses the threat-lead API while the live role is not tank", function()
+    state.addon.ApplyRoleLock("tank")
+    state.leadStatus, state.status = 1, 3
+    state.update(newFrame())
+    assertColor(state.textures[1], 1, 1, 0)
+    assert(state.threatQuery == "tank" and state.threatLeadQuery == "nameplate1")
+end)
+
+test("a locked non-tank role uses the normal threat API while the live role is tank", function()
+    state.tank = true
+    state.addon.ApplyRoleLock("nontank")
+    state.leadStatus, state.status = 0, 1
+    state.update(newFrame())
+    assertColor(state.textures[1], 1, 1, 0)
+    assert(state.threatQuery == "normal" and state.threatLeadQuery == nil)
+end)
+
+test("an unrecognized role lock follows the live role", function()
+    local frame = newFrame()
+    state.leadStatus, state.status = 1, 3
+    for _, role in ipairs({ "auto", "", "Tank", "healer" }) do
+        state.addon.ApplyRoleLock(role)
+        state.update(frame)
+        assertColor(state.textures[1], 1, 0, 0)
+        assert(state.threatQuery == "normal")
+    end
+    state.tank = true
+    state.addon.ApplyRoleLock("auto")
+    state.update(frame)
+    assertColor(state.textures[1], 1, 1, 0)
+    assert(state.threatQuery == "tank")
+end)
+
+test("locking a role refreshes existing overlays immediately", function()
+    state.status, state.leadStatus = 2, 1
+    local frame = newFrame()
+    state.update(frame)
+    assertColor(state.textures[1], 1, 0.6, 0)
+    state.addon.ApplyRoleLock("tank")
+    assertColor(state.textures[1], 1, 1, 0)
+    state.addon.ApplyRoleLock("auto")
+    assertColor(state.textures[1], 1, 0.6, 0)
+    assert(#state.textures == 1)
+end)
+
+test("a locked tank still needs aggro confirmation for the secure color", function()
+    state.addon.ApplyRoleLock("tank")
+    state.leadStatus = 0
+    local frame = newFrame()
+    for _, status in ipairs({ 2, 3 }) do
+        state.status = status
+        state.update(frame)
+        assertColor(state.textures[1], 0, 1, 0)
+    end
+    for _, status in ipairs({ 0, 1 }) do
+        state.status = status
+        state.update(frame)
+        assert(not state.textures[1].shown)
+    end
+    assert(state.tankingQuery == nil)
+end)
+
 test("secret detailed threat does not suppress a secure tank's green color", function()
     state.tank, state.leadStatus, state.isTanking = true, 0, state.secret
     state.update(newFrame())

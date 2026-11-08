@@ -28,19 +28,42 @@ test("native addon settings expose four color swatches with persisted defaults",
     for _ in pairs(state.settings) do
         count = count + 1
     end
-    assert(count == 4)
+    assert(count == 5)
+    assert(not state.settings.NameplateThreatColor_roleLock.swatch)
 end)
 
-test("a single requirements note appears above the color settings", function()
+test("the role setting offers automatic, tank and non-tank with automatic saved", function()
+    local setting = state.settings.NameplateThreatColor_roleLock
+    assert(setting.label == "Role" and setting.default == "auto")
+    assert(setting:GetValue() == "auto" and NameplateThreatColorDB.roleLock == "auto")
+    local expected = {
+        { "auto", "Automatic" },
+        { "tank", "Tank" },
+        { "nontank", "Non-tank" },
+    }
+    assert(#setting.options == #expected)
+    for index, option in ipairs(expected) do
+        assert(setting.options[index].value == option[1])
+        assert(setting.options[index].label == option[2])
+    end
+end)
+
+test("a single requirements note appears above the role and color settings", function()
     local initializers = state.category.layout.initializers
-    assert(#initializers == 5)
+    assert(#initializers == 6)
     local note = initializers[1]
     assert(note.template == "SettingsListSectionHeaderTemplate")
     assert(
         note.data.name
             == "Requires being in a party and Nameplates > Threat Display > Health Bar Color enabled."
     )
-    local keys = { "secureAggroColor", "warningColor", "urgentWarningColor", "highThreatColor" }
+    local keys = {
+        "roleLock",
+        "secureAggroColor",
+        "warningColor",
+        "urgentWarningColor",
+        "highThreatColor",
+    }
     for index, key in ipairs(keys) do
         local setting = state.settings["NameplateThreatColor_" .. key]
         assert(initializers[index + 1] == setting)
@@ -234,6 +257,51 @@ test("settings changes check a secret threat sentinel and hide its overlay", fun
     assert(state.secretChecked and not state.textures[1].shown and state.tankingQuery == nil)
 end)
 
+test("locking the tank role recolors live overlays and persists the choice", function()
+    state.status, state.leadStatus = 2, 0
+    local frame = newFrame()
+    state.update(frame)
+    assertColor(state.textures[1], 1, 0.6, 0)
+    local setting = state.settings.NameplateThreatColor_roleLock
+    setting:SetValue("tank")
+    assertColor(state.textures[1], 0, 1, 0)
+    assert(setting:GetValue() == "tank" and NameplateThreatColorDB.roleLock == "tank")
+    setting:SetValue("auto")
+    assertColor(state.textures[1], 1, 0.6, 0)
+    assert(setting:GetValue() == "auto" and NameplateThreatColorDB.roleLock == "auto")
+    assert(#state.textures == 1)
+end)
+
+test("locking the non-tank role ignores a tank's threat lead", function()
+    state.tank, state.status, state.leadStatus = true, 2, 3
+    local frame = newFrame()
+    state.update(frame)
+    assertColor(state.textures[1], 1, 0, 0)
+    state.settings.NameplateThreatColor_roleLock:SetValue("nontank")
+    assertColor(state.textures[1], 1, 0.6, 0)
+    assert(NameplateThreatColorDB.roleLock == "nontank")
+end)
+
+test("a saved role lock survives addon reinitialization", function()
+    state.settings.NameplateThreatColor_roleLock:SetValue("tank")
+    helpers.reloadAddon({ roleLock = NameplateThreatColorDB.roleLock })
+    assert(state.settings.NameplateThreatColor_roleLock:GetValue() == "tank")
+    assert(NameplateThreatColorDB.roleLock == "tank")
+    state.status, state.leadStatus = 2, 0
+    state.update(newFrame())
+    assertColor(state.textures[1], 0, 1, 0)
+end)
+
+test("unknown saved role locks fall back to automatic", function()
+    for _, saved in ipairs({ false, true, 0, {}, "", "TANK", "healer", "nontank ", "non-tank" }) do
+        helpers.reloadAddon({ roleLock = saved })
+        assert(NameplateThreatColorDB.roleLock == "auto")
+        assert(state.settings.NameplateThreatColor_roleLock:GetValue() == "auto")
+    end
+    helpers.reloadAddon({})
+    assert(NameplateThreatColorDB.roleLock == "auto")
+end)
+
 test("saved colors survive addon reinitialization", function()
     state.settings.NameplateThreatColor_warningColor:SetValue("ff336699")
     state.settings.NameplateThreatColor_urgentWarningColor:SetValue("ffcc6633")
@@ -270,12 +338,14 @@ test("missing saved colors get defaults without overwriting existing choices", f
     assert(NameplateThreatColorDB.urgentWarningColor == "ffff9900")
     assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
     assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
+    assert(NameplateThreatColorDB.roleLock == "auto")
 end)
 
 test("non-table saved databases are replaced with defaults", function()
     for _, saved in ipairs({ false, true, 0, 12345678, "", "ff112233" }) do
         helpers.reloadAddon(saved)
         assert(type(NameplateThreatColorDB) == "table")
+        assert(NameplateThreatColorDB.roleLock == "auto")
         assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
         assert(NameplateThreatColorDB.warningColor == "ffffff00")
         assert(NameplateThreatColorDB.urgentWarningColor == "ffff9900")
@@ -296,6 +366,7 @@ test("malformed saved colors are replaced without changing valid entries", funct
         warningColor = "FF445566",
         urgentWarningColor = "00AaBbCc",
         highThreatColor = "aB778899",
+        roleLock = "tank",
         unrelated = {},
     }
     local invalid = {

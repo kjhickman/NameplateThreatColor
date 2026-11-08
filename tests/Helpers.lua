@@ -58,6 +58,24 @@ function Settings.CreateColorSwatch(owner, setting, tooltip)
     owner.layout:AddInitializer(setting)
 end
 
+function Settings.CreateControlTextContainer()
+    local container = { data = {} }
+    function container:Add(value, label)
+        table.insert(self.data, { value = value, label = label })
+    end
+    function container:GetData()
+        return self.data
+    end
+    return container
+end
+
+function Settings.CreateDropdown(owner, setting, options, tooltip)
+    assert(owner == state.category and type(tooltip) == "string" and #tooltip > 0)
+    setting.options = options()
+    setting.tooltip = tooltip
+    owner.layout:AddInitializer(setting)
+end
+
 function Settings.RegisterAddOnCategory(owner)
     assert(owner == state.category)
     state.registeredCategory = owner

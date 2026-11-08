@@ -7,6 +7,22 @@ local defaults = {
     highThreatColor = "ffff0000",
 }
 
+local defaultRoleLock = "auto"
+local roleLockOptions = {
+    { "auto", "Automatic" },
+    { "tank", "Tank" },
+    { "nontank", "Non-tank" },
+}
+
+local function IsKnownRoleLock(value)
+    for _, option in ipairs(roleLockOptions) do
+        if option[1] == value then
+            return true
+        end
+    end
+    return false
+end
+
 local function RegisterColorSetting(category, key, label, tooltip)
     local setting = Settings.RegisterProxySetting(
         category,
@@ -25,6 +41,36 @@ local function RegisterColorSetting(category, key, label, tooltip)
     Settings.CreateColorSwatch(category, setting, tooltip)
 end
 
+local function RegisterRoleLockSetting(category)
+    local setting = Settings.RegisterProxySetting(
+        category,
+        "NameplateThreatColor_roleLock",
+        Settings.VarType.String,
+        "Role",
+        defaultRoleLock,
+        function()
+            return NameplateThreatColorDB.roleLock
+        end,
+        function(value)
+            NameplateThreatColorDB.roleLock = value
+            addon.ApplyRoleLock(value)
+        end
+    )
+    local function GetOptions()
+        local container = Settings.CreateControlTextContainer()
+        for _, option in ipairs(roleLockOptions) do
+            container:Add(option[1], option[2])
+        end
+        return container:GetData()
+    end
+    Settings.CreateDropdown(
+        category,
+        setting,
+        GetOptions,
+        "Which threat states the colors describe. Automatic follows your current role, while Tank or Non-tank keeps the same colors through stance, form and specialization changes."
+    )
+end
+
 EventUtil.ContinueOnAddOnLoaded(addonName, function()
     if type(NameplateThreatColorDB) ~= "table" then
         NameplateThreatColorDB = {}
@@ -35,12 +81,17 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
             NameplateThreatColorDB[key] = value
         end
     end
+    if not IsKnownRoleLock(NameplateThreatColorDB.roleLock) then
+        NameplateThreatColorDB.roleLock = defaultRoleLock
+    end
     addon.ApplyColors(NameplateThreatColorDB)
+    addon.ApplyRoleLock(NameplateThreatColorDB.roleLock)
 
     local category, layout = Settings.RegisterVerticalLayoutCategory("NameplateThreatColor")
     layout:AddInitializer(Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", {
         name = "Requires being in a party and Nameplates > Threat Display > Health Bar Color enabled.",
     }))
+    RegisterRoleLockSetting(category)
     RegisterColorSetting(
         category,
         "secureAggroColor",
