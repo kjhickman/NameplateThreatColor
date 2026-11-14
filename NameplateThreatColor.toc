@@ -1,6 +1,7 @@
 ## Interface: 16001
 ## Title: NameplateThreatColor
 ## Notes: Customize the blizzard nameplate threat colors.
+## IconAtlas: UI-LFG-RoleIcon-Tank
 ## Author: netward
 ## Version: @project-version@
 ## Dependencies: Blizzard_NamePlates
