@@ -1,6 +1,7 @@
 package-as: NameplateThreatColor
 
 ignore:
+  - logo.jpg
   - opencode.jsonc
   - run_tests.lua
   - tests

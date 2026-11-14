@@ -7,6 +7,7 @@
 ## Dependencies: Blizzard_NamePlates
 ## SavedVariables: NameplateThreatColorDB
 ## SavedVariablesPerCharacter: NameplateThreatColorCharDB
+## X-Curse-Project-ID: 1804022
 
 Nameplates.lua
 Settings.lua
