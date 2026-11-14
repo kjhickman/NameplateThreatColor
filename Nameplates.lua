@@ -1,6 +1,8 @@
 local _, addon = ...
 
-local threatColors = {}
+local nonTankColors = {}
+local tankColors = {}
+local separateColors = false
 local overlays = {}
 local partyUnits = { "party1", "party2", "party3", "party4" }
 
@@ -37,6 +39,7 @@ local function GetThreatColor(frame)
     if isTank == nil then
         isTank = PlayerUtil.IsPlayerEffectivelyTank()
     end
+    local palette = (isTank and separateColors) and tankColors or nonTankColors
 
     -- These APIs report different per-player states, not a shared state for the mob.
     -- Tanks: 0 = safe lead, 1/2 = weaker leads, 3 = unsafe/not highest threat.
@@ -61,8 +64,8 @@ local function GetThreatColor(frame)
         end
         for index = 1, GetNumSubgroupMembers() do
             local partyStatus = UnitThreatSituation(partyUnits[index], unit)
-            if not issecretvalue(partyStatus) and threatColors[partyStatus] then
-                return threatColors[0]
+            if not issecretvalue(partyStatus) and palette[partyStatus] then
+                return palette[0]
             end
         end
     end
@@ -76,7 +79,7 @@ local function GetThreatColor(frame)
         end
     end
 
-    return threatColors[status]
+    return palette[status]
 end
 
 local function UpdateThreatColor(frame)
@@ -150,15 +153,32 @@ function addon.ApplyRoleLock(role)
     RefreshOverlays()
 end
 
+local function BuildPalette(palette, secure, warning, urgent, high)
+    palette[0] = { CreateColorFromHexString(secure):GetRGB() }
+    palette[1] = { CreateColorFromHexString(warning):GetRGB() }
+    palette[2] = { CreateColorFromHexString(urgent):GetRGB() }
+    palette[3] = { CreateColorFromHexString(high):GetRGB() }
+end
+
 function addon.ApplyColors(colors)
-    local secure = CreateColorFromHexString(colors.secureAggroColor)
-    local warning = CreateColorFromHexString(colors.warningColor)
-    local urgent = CreateColorFromHexString(colors.urgentWarningColor)
-    local high = CreateColorFromHexString(colors.highThreatColor)
-    threatColors[0] = { secure:GetRGB() }
-    threatColors[1] = { warning:GetRGB() }
-    threatColors[2] = { urgent:GetRGB() }
-    threatColors[3] = { high:GetRGB() }
+    BuildPalette(
+        nonTankColors,
+        colors.secureAggroColor,
+        colors.warningColor,
+        colors.urgentWarningColor,
+        colors.highThreatColor
+    )
+
+    separateColors = colors.separateTankColors
+    if separateColors then
+        BuildPalette(
+            tankColors,
+            colors.tankSecureAggroColor,
+            colors.tankWarningColor,
+            colors.tankUrgentWarningColor,
+            colors.tankHighThreatColor
+        )
+    end
 
     RefreshOverlays()
 end

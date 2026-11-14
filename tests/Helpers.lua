@@ -23,7 +23,7 @@ function CreateColorFromHexString(hex)
     }
 end
 
-Settings = { VarType = { String = "string" } }
+Settings = { VarType = { Boolean = "boolean", String = "string" } }
 
 function Settings.RegisterVerticalLayoutCategory(name)
     state.category = { name = name, layout = { initializers = {} } }
@@ -38,14 +38,29 @@ function Settings.CreateElementInitializer(template, data)
 end
 
 function Settings.RegisterProxySetting(owner, variable, kind, label, default, getValue, setValue)
-    assert(owner == state.category and kind == Settings.VarType.String)
+    assert(owner == state.category)
+    assert(kind == Settings.VarType.String or kind == Settings.VarType.Boolean)
+    assert(type(default) == kind, "Default value does not match the declared variable type")
     assert(not state.settings[variable], "Setting registered twice")
-    local setting = { label = label, default = default }
+    local setting = { label = label, default = default, shownPredicates = {} }
     function setting:GetValue()
         return getValue()
     end
     function setting:SetValue(value)
         setValue(value)
+    end
+    -- Blizzard exposes these on the initializer, which is what the create helpers below
+    -- return; the mock keeps the two as one object.
+    function setting:AddShownPredicate(predicate)
+        table.insert(self.shownPredicates, predicate)
+    end
+    function setting:ShouldShow()
+        for _, predicate in ipairs(self.shownPredicates) do
+            if not predicate() then
+                return false
+            end
+        end
+        return true
     end
     state.settings[variable] = setting
     return setting
@@ -56,6 +71,16 @@ function Settings.CreateColorSwatch(owner, setting, tooltip)
     setting.swatch = true
     setting.tooltip = tooltip
     owner.layout:AddInitializer(setting)
+    return setting
+end
+
+function Settings.CreateCheckbox(owner, setting, tooltip)
+    assert(owner == state.category and type(tooltip) == "string" and #tooltip > 0)
+    assert(setting.default == false or setting.default == true)
+    setting.checkbox = true
+    setting.tooltip = tooltip
+    owner.layout:AddInitializer(setting)
+    return setting
 end
 
 function Settings.CreateControlTextContainer()
@@ -328,8 +353,8 @@ local function loadAddon()
     return addon
 end
 
-function helpers.reloadAddon(saved)
-    NameplateThreatColorDB = saved
+function helpers.reloadAddon(saved, charSaved)
+    NameplateThreatColorDB, NameplateThreatColorCharDB = saved, charSaved
     state.update, state.initialize, state.category, state.registeredCategory = nil, nil, nil, nil
     state.settings = {}
     state.addon = loadAddon()
@@ -341,6 +366,7 @@ function helpers.reloadAddon(saved)
     assert(
         NameplateThreatColorDB == saved and state.category == nil and next(state.settings) == nil
     )
+    assert(NameplateThreatColorCharDB == charSaved)
     state.initialize()
 end
 

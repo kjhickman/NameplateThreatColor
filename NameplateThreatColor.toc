@@ -6,6 +6,7 @@
 ## Version: @project-version@
 ## Dependencies: Blizzard_NamePlates
 ## SavedVariables: NameplateThreatColorDB
+## SavedVariablesPerCharacter: NameplateThreatColorCharDB
 
 Nameplates.lua
 Settings.lua

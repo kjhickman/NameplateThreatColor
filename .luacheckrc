@@ -21,7 +21,7 @@ read_globals = {
     "UnitThreatSituation",
 }
 
-globals = { "NameplateThreatColorDB" }
+globals = { "NameplateThreatColorCharDB", "NameplateThreatColorDB" }
 
 files["tests/Helpers.lua"] = {
     new_read_globals = {},

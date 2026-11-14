@@ -5,8 +5,13 @@ local defaults = {
     warningColor = "ffffff00",
     urgentWarningColor = "ffff9900",
     highThreatColor = "ffff0000",
+    tankSecureAggroColor = "ff00ff00",
+    tankWarningColor = "ffffff00",
+    tankUrgentWarningColor = "ffff9900",
+    tankHighThreatColor = "ffff0000",
 }
 
+local defaultSeparateTankColors = false
 local defaultRoleLock = "auto"
 local roleLockOptions = {
     { "auto", "Automatic" },
@@ -21,6 +26,12 @@ local function IsKnownRoleLock(value)
         end
     end
     return false
+end
+
+-- Blizzard re-evaluates shown predicates whenever any setting changes, so swatches
+-- gated on this appear and disappear as the checkbox is toggled.
+local function UsingSeparateTankColors()
+    return NameplateThreatColorDB.separateTankColors
 end
 
 local function RegisterColorSetting(category, key, label, tooltip)
@@ -38,7 +49,29 @@ local function RegisterColorSetting(category, key, label, tooltip)
             addon.ApplyColors(NameplateThreatColorDB)
         end
     )
-    Settings.CreateColorSwatch(category, setting, tooltip)
+    return Settings.CreateColorSwatch(category, setting, tooltip)
+end
+
+local function RegisterSeparateTankColorsSetting(category)
+    local setting = Settings.RegisterProxySetting(
+        category,
+        "NameplateThreatColor_separateTankColors",
+        Settings.VarType.Boolean,
+        "Separate tank colors",
+        defaultSeparateTankColors,
+        function()
+            return NameplateThreatColorDB.separateTankColors
+        end,
+        function(value)
+            NameplateThreatColorDB.separateTankColors = value
+            addon.ApplyColors(NameplateThreatColorDB)
+        end
+    )
+    Settings.CreateCheckbox(
+        category,
+        setting,
+        "Give tanking its own set of colors. While off, both roles share the colors above."
+    )
 end
 
 local function RegisterRoleLockSetting(category)
@@ -49,10 +82,10 @@ local function RegisterRoleLockSetting(category)
         "Role",
         defaultRoleLock,
         function()
-            return NameplateThreatColorDB.roleLock
+            return NameplateThreatColorCharDB.roleLock
         end,
         function(value)
-            NameplateThreatColorDB.roleLock = value
+            NameplateThreatColorCharDB.roleLock = value
             addon.ApplyRoleLock(value)
         end
     )
@@ -81,11 +114,20 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
             NameplateThreatColorDB[key] = value
         end
     end
-    if not IsKnownRoleLock(NameplateThreatColorDB.roleLock) then
-        NameplateThreatColorDB.roleLock = defaultRoleLock
+    if type(NameplateThreatColorDB.separateTankColors) ~= "boolean" then
+        NameplateThreatColorDB.separateTankColors = defaultSeparateTankColors
     end
+
+    -- The role lock is per character so a locked tank does not follow you onto an alt.
+    if type(NameplateThreatColorCharDB) ~= "table" then
+        NameplateThreatColorCharDB = {}
+    end
+    if not IsKnownRoleLock(NameplateThreatColorCharDB.roleLock) then
+        NameplateThreatColorCharDB.roleLock = defaultRoleLock
+    end
+
     addon.ApplyColors(NameplateThreatColorDB)
-    addon.ApplyRoleLock(NameplateThreatColorDB.roleLock)
+    addon.ApplyRoleLock(NameplateThreatColorCharDB.roleLock)
 
     local category, layout = Settings.RegisterVerticalLayoutCategory("NameplateThreatColor")
     layout:AddInitializer(Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", {
@@ -116,5 +158,30 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
         "Pulled / lost aggro color",
         "For tanks: lost or unsafe aggro. For non-tanks: holding aggro."
     )
+    RegisterSeparateTankColorsSetting(category)
+    RegisterColorSetting(
+        category,
+        "tankSecureAggroColor",
+        "Tank secure aggro color",
+        "For tanks: holding aggro with a safe threat lead."
+    ):AddShownPredicate(UsingSeparateTankColors)
+    RegisterColorSetting(
+        category,
+        "tankWarningColor",
+        "Tank threat warning color",
+        "For tanks: a threat-lead warning."
+    ):AddShownPredicate(UsingSeparateTankColors)
+    RegisterColorSetting(
+        category,
+        "tankUrgentWarningColor",
+        "Tank urgent threat warning color",
+        "For tanks: a more urgent threat-lead warning."
+    ):AddShownPredicate(UsingSeparateTankColors)
+    RegisterColorSetting(
+        category,
+        "tankHighThreatColor",
+        "Tank lost aggro color",
+        "For tanks: lost or unsafe aggro."
+    ):AddShownPredicate(UsingSeparateTankColors)
     Settings.RegisterAddOnCategory(category)
 end)

@@ -32,6 +32,43 @@ test("applying a supplied palette refreshes overlays without changing saved sett
     assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
 end)
 
+test("a supplied tank palette is only used once separate tank colors are on", function()
+    local colors = {
+        secureAggroColor = "ff00ff00",
+        warningColor = "ffffff00",
+        urgentWarningColor = "ffff9900",
+        highThreatColor = "ffff0000",
+        tankSecureAggroColor = "ff00ffff",
+        tankWarningColor = "ffff00ff",
+        tankUrgentWarningColor = "ffffffff",
+        tankHighThreatColor = "ff0000ff",
+    }
+    state.tank = true
+    local frame = newFrame()
+    state.addon.ApplyColors(colors)
+    state.update(frame)
+    assertColor(state.textures[1], 1, 0, 0)
+    colors.separateTankColors = true
+    state.addon.ApplyColors(colors)
+    assertColor(state.textures[1], 0, 0, 1)
+    colors.separateTankColors = false
+    state.addon.ApplyColors(colors)
+    assertColor(state.textures[1], 1, 0, 0)
+    assert(#state.textures == 1)
+end)
+
+test("sharing one palette avoids recoloring an overlay across role changes", function()
+    local frame = newFrame()
+    state.update(frame)
+    assertColor(state.textures[1], 1, 0, 0)
+    for _, role in ipairs({ true, false, true, false }) do
+        state.tank = role
+        state.update(frame)
+        assertColor(state.textures[1], 1, 0, 0)
+    end
+    assert(state.textures[1].colorCalls == 1)
+end)
+
 test("party frames are not queried or given overlays", function()
     state.update(newFrame("player"))
     assert(#state.textures == 0 and state.threatQuery == nil)
