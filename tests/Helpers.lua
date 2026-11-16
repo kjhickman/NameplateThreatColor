@@ -25,16 +25,31 @@ end
 
 Settings = { VarType = { Boolean = "boolean", String = "string" } }
 
-function Settings.RegisterVerticalLayoutCategory(name)
-    state.category = { name = name, layout = { initializers = {} } }
-    function state.category.layout:AddInitializer(initializer)
-        table.insert(self.initializers, initializer)
-    end
-    return state.category, state.category.layout
+function Settings.RegisterCanvasLayoutCategory(frame, name)
+    state.category = { name = name, frame = frame }
+    return state.category
 end
 
 function Settings.CreateElementInitializer(template, data)
-    return { template = template, data = data }
+    local initializer = { template = template, data = data }
+    function initializer:GetTemplate()
+        return self.template
+    end
+    function initializer:InitFrame(frame)
+        assert(frame:GetElementData() == self)
+        frame.initializer = self
+        local setting = self.data.setting
+        if setting then
+            setting.control = frame
+            setting.tooltip = self.data.tooltip
+            setting.swatch = self.template == "SettingsColorSwatchControlTemplate"
+            setting.checkbox = self.template == "SettingsCheckboxControlTemplate"
+            if self.data.options then
+                setting.options = self.data.options()
+            end
+        end
+    end
+    return initializer
 end
 
 function Settings.RegisterProxySetting(owner, variable, kind, label, default, getValue, setValue)
@@ -42,45 +57,32 @@ function Settings.RegisterProxySetting(owner, variable, kind, label, default, ge
     assert(kind == Settings.VarType.String or kind == Settings.VarType.Boolean)
     assert(type(default) == kind, "Default value does not match the declared variable type")
     assert(not state.settings[variable], "Setting registered twice")
-    local setting = { label = label, default = default, shownPredicates = {} }
+    local setting = { label = label, default = default }
     function setting:GetValue()
         return getValue()
     end
     function setting:SetValue(value)
         setValue(value)
     end
-    -- Blizzard exposes these on the initializer, which is what the create helpers below
-    -- return; the mock keeps the two as one object.
-    function setting:AddShownPredicate(predicate)
-        table.insert(self.shownPredicates, predicate)
-    end
-    function setting:ShouldShow()
-        for _, predicate in ipairs(self.shownPredicates) do
-            if not predicate() then
-                return false
-            end
-        end
-        return true
-    end
     state.settings[variable] = setting
     return setting
 end
 
-function Settings.CreateColorSwatch(owner, setting, tooltip)
-    assert(owner == state.category and type(tooltip) == "string" and #tooltip > 0)
-    setting.swatch = true
-    setting.tooltip = tooltip
-    owner.layout:AddInitializer(setting)
-    return setting
+function Settings.CreateColorSwatchInitializer(setting, options, tooltip)
+    return Settings.CreateElementInitializer("SettingsColorSwatchControlTemplate", {
+        setting = setting,
+        options = options,
+        tooltip = tooltip,
+    })
 end
 
-function Settings.CreateCheckbox(owner, setting, tooltip)
-    assert(owner == state.category and type(tooltip) == "string" and #tooltip > 0)
+function Settings.CreateCheckboxInitializer(setting, options, tooltip)
     assert(setting.default == false or setting.default == true)
-    setting.checkbox = true
-    setting.tooltip = tooltip
-    owner.layout:AddInitializer(setting)
-    return setting
+    return Settings.CreateElementInitializer("SettingsCheckboxControlTemplate", {
+        setting = setting,
+        options = options,
+        tooltip = tooltip,
+    })
 end
 
 function Settings.CreateControlTextContainer()
@@ -94,11 +96,12 @@ function Settings.CreateControlTextContainer()
     return container
 end
 
-function Settings.CreateDropdown(owner, setting, options, tooltip)
-    assert(owner == state.category and type(tooltip) == "string" and #tooltip > 0)
-    setting.options = options()
-    setting.tooltip = tooltip
-    owner.layout:AddInitializer(setting)
+function Settings.CreateDropdownInitializer(setting, options, tooltip)
+    return Settings.CreateElementInitializer("SettingsDropdownControlTemplate", {
+        setting = setting,
+        options = options,
+        tooltip = tooltip,
+    })
 end
 
 function Settings.RegisterAddOnCategory(owner)
@@ -192,7 +195,26 @@ function UnitDetailedThreatSituation(player, unit)
     return state.isTanking
 end
 
-function CreateFrame(kind, name, parent)
+local function noop() end
+
+function CreateFrame(kind, name, parent, template)
+    if kind == "Frame" then
+        assert(name == nil)
+        local frame = { parent = parent, template = template, shown = true }
+        frame.SetPoint = noop
+        frame.SetHeight = noop
+        function frame:SetShown(shown)
+            self.shown = shown
+        end
+        function frame:IsShown()
+            return self.shown and (not self.parent or self.parent:IsShown())
+        end
+        if template == "SettingsListSectionHeaderTemplate" then
+            frame.Title = { SetFontObject = noop, SetPoint = noop }
+        end
+        table.insert(state.uiFrames, frame)
+        return frame
+    end
     assert(kind == "StatusBar" and name == nil and parent)
     local bar = { parent = parent, CreateTexture = parent.CreateTexture }
     function bar:SetAllPoints(relativeTo)
@@ -356,7 +378,7 @@ end
 function helpers.reloadAddon(saved, charSaved)
     NameplateThreatColorDB, NameplateThreatColorCharDB = saved, charSaved
     state.update, state.initialize, state.category, state.registeredCategory = nil, nil, nil, nil
-    state.settings = {}
+    state.settings, state.uiFrames = {}, {}
     state.addon = loadAddon()
     assert(state.update, "Health-color post-hook was not installed")
     assert(

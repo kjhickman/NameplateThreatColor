@@ -28,13 +28,24 @@ local function IsKnownRoleLock(value)
     return false
 end
 
--- Blizzard re-evaluates shown predicates whenever any setting changes, so swatches
--- gated on this appear and disappear as the checkbox is toggled.
-local function UsingSeparateTankColors()
-    return NameplateThreatColorDB.separateTankColors
+-- These frames belong only to this canvas, never to Blizzard's shared settings
+-- list/pool. In particular, visibility changes must not use AddShownPredicate.
+local function AddControl(parent, initializer, offset)
+    local control = CreateFrame("Frame", nil, parent, initializer:GetTemplate())
+    control:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -offset)
+    control:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -offset)
+    control.GetElementData = function()
+        return initializer
+    end
+    -- List narration expects a vertical layout; this canvas has no list indices.
+    control.GetNarrationIndexString = function()
+        return nil
+    end
+    initializer:InitFrame(control)
+    return control
 end
 
-local function RegisterColorSetting(category, key, label, tooltip)
+local function RegisterColorSetting(category, parent, offset, key, label, tooltip)
     local setting = Settings.RegisterProxySetting(
         category,
         "NameplateThreatColor_" .. key,
@@ -49,10 +60,10 @@ local function RegisterColorSetting(category, key, label, tooltip)
             addon.ApplyColors(NameplateThreatColorDB)
         end
     )
-    return Settings.CreateColorSwatch(category, setting, tooltip)
+    return AddControl(parent, Settings.CreateColorSwatchInitializer(setting, nil, tooltip), offset)
 end
 
-local function RegisterSeparateTankColorsSetting(category)
+local function RegisterSeparateTankColorsSetting(category, panel, tankSection)
     local setting = Settings.RegisterProxySetting(
         category,
         "NameplateThreatColor_separateTankColors",
@@ -65,16 +76,21 @@ local function RegisterSeparateTankColorsSetting(category)
         function(value)
             NameplateThreatColorDB.separateTankColors = value
             addon.ApplyColors(NameplateThreatColorDB)
+            tankSection:SetShown(value)
         end
     )
-    Settings.CreateCheckbox(
-        category,
-        setting,
-        "Give tanking its own set of colors. While off, both roles share the colors above."
+    AddControl(
+        panel,
+        Settings.CreateCheckboxInitializer(
+            setting,
+            nil,
+            "Give tanking its own set of colors. While off, both roles share the colors above."
+        ),
+        232
     )
 end
 
-local function RegisterRoleLockSetting(category)
+local function RegisterRoleLockSetting(category, panel)
     local setting = Settings.RegisterProxySetting(
         category,
         "NameplateThreatColor_roleLock",
@@ -96,11 +112,14 @@ local function RegisterRoleLockSetting(category)
         end
         return container:GetData()
     end
-    Settings.CreateDropdown(
-        category,
-        setting,
-        GetOptions,
-        "Which threat states the colors describe. Automatic follows your current role, while Tank or Non-tank keeps the same colors through stance, form and specialization changes."
+    AddControl(
+        panel,
+        Settings.CreateDropdownInitializer(
+            setting,
+            GetOptions,
+            "Which threat states the colors describe. Automatic follows your current role, while Tank or Non-tank keeps the same colors through stance, form and specialization changes."
+        ),
+        62
     )
 end
 
@@ -129,59 +148,91 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
     addon.ApplyColors(NameplateThreatColorDB)
     addon.ApplyRoleLock(NameplateThreatColorCharDB.roleLock)
 
-    local category, layout = Settings.RegisterVerticalLayoutCategory("NameplateThreatColor")
-    layout:AddInitializer(Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", {
-        name = "Requires being in a party and Nameplates > Threat Display > Health Bar Color enabled.",
-    }))
-    RegisterRoleLockSetting(category)
+    local panel = CreateFrame("Frame")
+    local category = Settings.RegisterCanvasLayoutCategory(panel, "NameplateThreatColor")
+    local tankSection = CreateFrame("Frame", nil, panel)
+    tankSection:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -266)
+    tankSection:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -266)
+    tankSection:SetHeight(136)
+    panel.OnRefresh = function()
+        tankSection:SetShown(NameplateThreatColorDB.separateTankColors)
+    end
+    panel:OnRefresh()
+
+    local note = AddControl(
+        panel,
+        Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", {
+            name = "Requires being in a party and Nameplates > Threat Display > Health Bar Color enabled.",
+        }),
+        0
+    )
+    note.Title:SetFontObject("GameFontHighlightSmall")
+    note.Title:SetPoint("TOPRIGHT", note, "TOPRIGHT", -8, -16)
+    RegisterRoleLockSetting(category, panel)
     RegisterColorSetting(
         category,
+        panel,
+        96,
         "secureAggroColor",
         "Secure aggro color",
         "For tanks: holding aggro with a safe threat lead. For non-tanks: no aggro and safely below the pull threshold."
     )
     RegisterColorSetting(
         category,
+        panel,
+        130,
         "warningColor",
         "Threat warning color",
         "For tanks: a threat-lead warning. For non-tanks: high threat without holding aggro."
     )
     RegisterColorSetting(
         category,
+        panel,
+        164,
         "urgentWarningColor",
         "Urgent threat warning color",
         "For tanks: a more urgent threat-lead warning. For non-tanks: holding aggro while another unit has higher threat."
     )
     RegisterColorSetting(
         category,
+        panel,
+        198,
         "highThreatColor",
         "Pulled / lost aggro color",
         "For tanks: lost or unsafe aggro. For non-tanks: holding aggro."
     )
-    RegisterSeparateTankColorsSetting(category)
+    RegisterSeparateTankColorsSetting(category, panel, tankSection)
     RegisterColorSetting(
         category,
+        tankSection,
+        0,
         "tankSecureAggroColor",
         "Tank secure aggro color",
         "For tanks: holding aggro with a safe threat lead."
-    ):AddShownPredicate(UsingSeparateTankColors)
+    )
     RegisterColorSetting(
         category,
+        tankSection,
+        34,
         "tankWarningColor",
         "Tank threat warning color",
         "For tanks: a threat-lead warning."
-    ):AddShownPredicate(UsingSeparateTankColors)
+    )
     RegisterColorSetting(
         category,
+        tankSection,
+        68,
         "tankUrgentWarningColor",
         "Tank urgent threat warning color",
         "For tanks: a more urgent threat-lead warning."
-    ):AddShownPredicate(UsingSeparateTankColors)
+    )
     RegisterColorSetting(
         category,
+        tankSection,
+        102,
         "tankHighThreatColor",
         "Tank lost aggro color",
         "For tanks: lost or unsafe aggro."
-    ):AddShownPredicate(UsingSeparateTankColors)
+    )
     Settings.RegisterAddOnCategory(category)
 end)

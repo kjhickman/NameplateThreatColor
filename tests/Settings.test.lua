@@ -4,7 +4,7 @@ local test = helpers.test
 local newFrame = helpers.newFrame
 local assertColor = helpers.assertColor
 
-test("native addon settings expose four color swatches with persisted defaults", function()
+test("canvas settings expose four color swatches with persisted defaults", function()
     assert(
         state.category.name == "NameplateThreatColor" and state.registeredCategory == state.category
     )
@@ -66,9 +66,9 @@ test("the role setting offers automatic, tank and non-tank with automatic saved"
 end)
 
 test("a single requirements note appears above the role and color settings", function()
-    local initializers = state.category.layout.initializers
-    assert(#initializers == 11)
-    local note = initializers[1]
+    assert(state.category.layout == nil, "Controls must not enter the shared settings list")
+    local panel = state.category.frame
+    local note = state.uiFrames[3].initializer
     assert(note.template == "SettingsListSectionHeaderTemplate")
     assert(
         note.data.name
@@ -86,9 +86,12 @@ test("a single requirements note appears above the role and color settings", fun
         "tankUrgentWarningColor",
         "tankHighThreatColor",
     }
-    for index, key in ipairs(keys) do
+    for _, key in ipairs(keys) do
         local setting = state.settings["NameplateThreatColor_" .. key]
-        assert(initializers[index + 1] == setting)
+        local control = setting.control
+        assert(control:GetElementData().data.setting == setting)
+        assert(control.parent == panel or control.parent.parent == panel)
+        assert(control:GetNarrationIndexString() == nil)
         assert(not setting.tooltip:find("Requires", 1, true))
         assert(not setting.tooltip:find("Nameplates >", 1, true))
     end
@@ -457,7 +460,7 @@ test("malformed saved colors are replaced without changing valid entries", funct
     end
 end)
 
-test("the tank swatches stay hidden until separate tank colors is enabled", function()
+test("tank swatches appear only while separate tank colors is enabled", function()
     local checkbox = state.settings.NameplateThreatColor_separateTankColors
     assert(checkbox.checkbox and checkbox.label == "Separate tank colors")
     assert(checkbox.default == false and checkbox:GetValue() == false)
@@ -477,22 +480,42 @@ test("the tank swatches stay hidden until separate tank colors is enabled", func
         "tankHighThreatColor",
     }
     for _, key in ipairs(shared) do
-        assert(state.settings["NameplateThreatColor_" .. key]:ShouldShow())
+        assert(state.settings["NameplateThreatColor_" .. key].control:IsShown())
     end
     for _, key in ipairs(tankKeys) do
-        assert(not state.settings["NameplateThreatColor_" .. key]:ShouldShow())
+        assert(not state.settings["NameplateThreatColor_" .. key].control:IsShown())
     end
     checkbox:SetValue(true)
     for _, key in ipairs(shared) do
-        assert(state.settings["NameplateThreatColor_" .. key]:ShouldShow())
+        assert(state.settings["NameplateThreatColor_" .. key].control:IsShown())
     end
     for _, key in ipairs(tankKeys) do
-        assert(state.settings["NameplateThreatColor_" .. key]:ShouldShow())
+        assert(state.settings["NameplateThreatColor_" .. key].control:IsShown())
     end
     checkbox:SetValue(false)
     for _, key in ipairs(tankKeys) do
-        assert(not state.settings["NameplateThreatColor_" .. key]:ShouldShow())
+        assert(not state.settings["NameplateThreatColor_" .. key].control:IsShown())
     end
+end)
+
+test("saved separate tank colors show the tank section on initialization and refresh", function()
+    helpers.reloadAddon({ separateTankColors = true })
+    local control = state.settings.NameplateThreatColor_tankSecureAggroColor.control
+    assert(control:IsShown())
+    NameplateThreatColorDB.separateTankColors = false
+    state.category.frame:OnRefresh()
+    assert(not control:IsShown())
+    NameplateThreatColorDB.separateTankColors = true
+    state.category.frame:OnRefresh()
+    assert(control:IsShown())
+end)
+
+test("restoring the separate tank colors default hides the tank section", function()
+    local setting = state.settings.NameplateThreatColor_separateTankColors
+    setting:SetValue(true)
+    assert(state.settings.NameplateThreatColor_tankSecureAggroColor.control:IsShown())
+    setting:SetValue(setting.default)
+    assert(not state.settings.NameplateThreatColor_tankSecureAggroColor.control:IsShown())
 end)
 
 test("non-boolean separate tank color flags fall back to off", function()
