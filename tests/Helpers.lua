@@ -9,6 +9,37 @@ EventUtil = {
         assert(name == "NameplateThreatColor")
         state.initialize = callback
     end,
+    ContinueOnVariablesLoaded = function(callback)
+        if state.variablesLoaded then
+            callback()
+        else
+            state.onVariablesLoaded = callback
+        end
+    end,
+}
+
+Enum = { NamePlateThreatDisplay = { HealthBarColor = 3 } }
+UIParent = {
+    IsShown = function()
+        return true
+    end,
+}
+
+C_CVar = {
+    GetCVarBitfield = function(name, index)
+        assert(
+            name == "nameplateThreatDisplay" and index == Enum.NamePlateThreatDisplay.HealthBarColor
+        )
+        return state.healthBarColorCVar
+    end,
+    SetCVarBitfield = function(name, index, value)
+        assert(
+            name == "nameplateThreatDisplay" and index == Enum.NamePlateThreatDisplay.HealthBarColor
+        )
+        assert(type(value) == "boolean")
+        state.healthBarColorCVar = value
+        return true
+    end,
 }
 
 function CreateColorFromHexString(hex)
@@ -198,19 +229,80 @@ end
 local function noop() end
 
 function CreateFrame(kind, name, parent, template)
-    if kind == "Frame" then
+    if kind == "Frame" or kind == "Button" or kind == "CheckButton" then
         assert(name == nil)
-        local frame = { parent = parent, template = template, shown = true }
-        frame.SetPoint = noop
-        frame.SetHeight = noop
+        local frame = {
+            parent = parent,
+            template = template,
+            shown = true,
+            children = {},
+            scripts = {},
+            SetPoint = noop,
+            SetWidth = noop,
+            SetHeight = noop,
+            SetSize = noop,
+            SetAllPoints = noop,
+            SetFrameStrata = noop,
+            SetToplevel = noop,
+            EnableMouse = noop,
+        }
+        if parent and parent.children then
+            table.insert(parent.children, frame)
+        end
         function frame:SetShown(shown)
             self.shown = shown
+        end
+        function frame:Hide()
+            self.shown = false
         end
         function frame:IsShown()
             return self.shown and (not self.parent or self.parent:IsShown())
         end
+        function frame:CreateFontString()
+            local text = {
+                SetPoint = noop,
+                SetWidth = noop,
+                GetStringHeight = function()
+                    return 0
+                end,
+            }
+            function text:SetText(value)
+                self.text = value
+            end
+            frame.fontString = text
+            return text
+        end
+        function frame:SetText(value)
+            self.text = value
+        end
+        function frame:SetScript(event, handler)
+            self.scripts[event] = handler
+        end
+        function frame:Click()
+            self.scripts.OnClick(self)
+        end
+        if kind == "CheckButton" then
+            frame.checked = false
+            frame.Text = {
+                GetStringWidth = function()
+                    return 0
+                end,
+                SetText = function(self, value)
+                    self.text = value
+                end,
+            }
+            function frame:SetChecked(checked)
+                self.checked = checked and true or false
+            end
+            function frame:GetChecked()
+                return self.checked
+            end
+        end
         if template == "SettingsListSectionHeaderTemplate" then
             frame.Title = { SetFontObject = noop, SetPoint = noop }
+        end
+        if parent == UIParent then
+            state.prompt = frame
         end
         table.insert(state.uiFrames, frame)
         return frame
@@ -356,6 +448,7 @@ function helpers.test(name, run)
     state.isTanking, state.tankingQuery = true, nil
     state.threatQuery, state.secretChecked = nil, false
     state.secret, state.nameplateQuery = {}, nil
+    state.healthBarColorCVar, state.variablesLoaded = true, true
     helpers.reloadAddon()
     run()
     helpers.tests = helpers.tests + 1
@@ -378,6 +471,7 @@ end
 function helpers.reloadAddon(saved, charSaved)
     NameplateThreatColorDB, NameplateThreatColorCharDB = saved, charSaved
     state.update, state.initialize, state.category, state.registeredCategory = nil, nil, nil, nil
+    state.onVariablesLoaded, state.prompt = nil, nil
     state.settings, state.uiFrames = {}, {}
     state.addon = loadAddon()
     assert(state.update, "Health-color post-hook was not installed")

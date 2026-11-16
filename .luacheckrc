@@ -4,15 +4,18 @@ std = "lua51"
 max_line_length = false
 
 read_globals = {
+    "C_CVar",
     "C_NamePlate",
     "CreateColorFromHexString",
     "CreateFrame",
+    "Enum",
     "EventUtil",
     "GetNumSubgroupMembers",
     "hooksecurefunc",
     "issecretvalue",
     "PlayerUtil",
     "Settings",
+    "UIParent",
     "UnitAffectingCombat",
     "UnitCanAttack",
     "UnitDetailedThreatSituation",

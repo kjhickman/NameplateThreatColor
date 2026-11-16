@@ -13,6 +13,7 @@ local defaults = {
 
 local defaultSeparateTankColors = false
 local defaultRoleLock = "auto"
+local threatDisplayCVar = "nameplateThreatDisplay"
 local roleLockOptions = {
     { "auto", "Automatic" },
     { "tank", "Tank" },
@@ -123,6 +124,67 @@ local function RegisterRoleLockSetting(category, panel)
     )
 end
 
+local function ShowHealthBarColorPrompt()
+    local prompt = CreateFrame("Frame", nil, UIParent)
+    prompt:SetWidth(360)
+    prompt:SetPoint("TOP", UIParent, "TOP", 0, -135)
+    prompt:SetFrameStrata("DIALOG")
+    prompt:SetToplevel(true)
+    prompt:EnableMouse(true)
+
+    local border = CreateFrame("Frame", nil, prompt, "DialogBorderDarkTemplate")
+    border:SetAllPoints(prompt)
+
+    local text = prompt:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
+    text:SetWidth(312)
+    text:SetPoint("TOP", prompt, "TOP", 0, -18)
+    text:SetText(
+        "NameplateThreatColor needs Nameplates > Aggro Display > Health Bar Color enabled to color enemy health bars."
+    )
+
+    local dontShow = CreateFrame("CheckButton", nil, prompt, "UICheckButtonTemplate")
+    dontShow:SetSize(24, 24)
+    dontShow.Text:SetText("Don't show this again")
+    local checkboxOffset = dontShow.Text:GetStringWidth() / 2
+    dontShow:SetPoint("TOP", text, "BOTTOM", -checkboxOffset, -10)
+
+    for _, spec in ipairs({
+        { "Enable", "TOPRIGHT", -5, true },
+        { "Dismiss", "TOPLEFT", 5, false },
+    }) do
+        local button = CreateFrame("Button", nil, prompt, "UIPanelButtonTemplate")
+        button:SetSize(128, 21)
+        button:SetPoint(spec[2], dontShow, "BOTTOM", checkboxOffset + spec[3], -8)
+        button:SetText(spec[1])
+        button:SetScript("OnClick", function()
+            if dontShow:GetChecked() then
+                NameplateThreatColorDB.hideHealthBarColorPrompt = true
+            end
+            if spec[4] then
+                C_CVar.SetCVarBitfield(
+                    threatDisplayCVar,
+                    Enum.NamePlateThreatDisplay.HealthBarColor,
+                    true
+                )
+            end
+            prompt:Hide()
+        end)
+    end
+
+    prompt:SetHeight(text:GetStringHeight() + 95)
+end
+
+local function CheckHealthBarColorSetting()
+    if NameplateThreatColorDB.hideHealthBarColorPrompt then
+        return
+    end
+    local enabled =
+        C_CVar.GetCVarBitfield(threatDisplayCVar, Enum.NamePlateThreatDisplay.HealthBarColor)
+    if enabled == false then
+        ShowHealthBarColorPrompt()
+    end
+end
+
 EventUtil.ContinueOnAddOnLoaded(addonName, function()
     if type(NameplateThreatColorDB) ~= "table" then
         NameplateThreatColorDB = {}
@@ -136,6 +198,9 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
     if type(NameplateThreatColorDB.separateTankColors) ~= "boolean" then
         NameplateThreatColorDB.separateTankColors = defaultSeparateTankColors
     end
+    if type(NameplateThreatColorDB.hideHealthBarColorPrompt) ~= "boolean" then
+        NameplateThreatColorDB.hideHealthBarColorPrompt = false
+    end
 
     -- The role lock is per character so a locked tank does not follow you onto an alt.
     if type(NameplateThreatColorCharDB) ~= "table" then
@@ -147,6 +212,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
 
     addon.ApplyColors(NameplateThreatColorDB)
     addon.ApplyRoleLock(NameplateThreatColorCharDB.roleLock)
+    EventUtil.ContinueOnVariablesLoaded(CheckHealthBarColorSetting)
 
     local panel = CreateFrame("Frame")
     local category = Settings.RegisterCanvasLayoutCategory(panel, "NameplateThreatColor")
@@ -162,7 +228,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
     local note = AddControl(
         panel,
         Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", {
-            name = "Requires being in a party and Nameplates > Threat Display > Health Bar Color enabled.",
+            name = "Requires being in a party and Nameplates > Aggro Display > Health Bar Color enabled.",
         }),
         0
     )

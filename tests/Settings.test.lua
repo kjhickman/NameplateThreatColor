@@ -72,7 +72,7 @@ test("a single requirements note appears above the role and color settings", fun
     assert(note.template == "SettingsListSectionHeaderTemplate")
     assert(
         note.data.name
-            == "Requires being in a party and Nameplates > Threat Display > Health Bar Color enabled."
+            == "Requires being in a party and Nameplates > Aggro Display > Health Bar Color enabled."
     )
     local keys = {
         "roleLock",
@@ -654,4 +654,67 @@ test("saved tank colors survive addon reinitialization", function()
     state.tank = true
     state.update(newFrame())
     assertColor(state.textures[1], 0, 0, 1)
+end)
+
+test("enabled or unavailable Health Bar Color CVar does not show a prompt", function()
+    assert(state.prompt == nil and NameplateThreatColorDB.hideHealthBarColorPrompt == false)
+    state.healthBarColorCVar = nil
+    helpers.reloadAddon()
+    assert(state.prompt == nil)
+end)
+
+test("disabled Health Bar Color waits for CVars to load before prompting", function()
+    state.healthBarColorCVar, state.variablesLoaded = false, false
+    helpers.reloadAddon()
+    assert(state.prompt == nil and state.onVariablesLoaded)
+    state.onVariablesLoaded()
+    assert(state.prompt and state.prompt:IsShown())
+    assert(
+        state.prompt.fontString.text:find("Nameplates > Aggro Display > Health Bar Color", 1, true)
+    )
+    local _, dontShow, enableButton, dismissButton = unpack(state.prompt.children)
+    assert(dontShow.Text.text == "Don't show this again" and not dontShow:GetChecked())
+    assert(enableButton.text == "Enable" and dismissButton.text == "Dismiss")
+end)
+
+test("enabling from the prompt turns Health Bar Color on and hides the dialog", function()
+    state.healthBarColorCVar = false
+    helpers.reloadAddon()
+    state.prompt.children[3]:Click()
+    assert(state.healthBarColorCVar == true)
+    assert(not state.prompt:IsShown())
+    assert(NameplateThreatColorDB.hideHealthBarColorPrompt == false)
+end)
+
+test("dismissing without checking don't show again prompts again on reload", function()
+    state.healthBarColorCVar = false
+    helpers.reloadAddon()
+    state.prompt.children[4]:Click()
+    assert(state.healthBarColorCVar == false and not state.prompt:IsShown())
+    assert(NameplateThreatColorDB.hideHealthBarColorPrompt == false)
+    helpers.reloadAddon(NameplateThreatColorDB)
+    assert(state.prompt and state.prompt:IsShown())
+end)
+
+test("checking don't show again persists across dismiss and enable", function()
+    for _, enable in ipairs({ false, true }) do
+        state.healthBarColorCVar = false
+        helpers.reloadAddon()
+        state.prompt.children[2]:SetChecked(true)
+        state.prompt.children[enable and 3 or 4]:Click()
+        assert(state.healthBarColorCVar == enable)
+        assert(NameplateThreatColorDB.hideHealthBarColorPrompt == true)
+        state.healthBarColorCVar = false
+        helpers.reloadAddon(NameplateThreatColorDB)
+        assert(state.prompt == nil)
+    end
+end)
+
+test("non-boolean saved prompt suppression flags fall back to showing", function()
+    state.healthBarColorCVar = false
+    for _, saved in ipairs({ 0, 1, "", "true", "false", {} }) do
+        helpers.reloadAddon({ hideHealthBarColorPrompt = saved })
+        assert(NameplateThreatColorDB.hideHealthBarColorPrompt == false)
+        assert(state.prompt and state.prompt:IsShown())
+    end
 end)
