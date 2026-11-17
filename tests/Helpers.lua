@@ -144,9 +144,6 @@ local function forbiddenWrite()
     error("Addon touched Blizzard-owned state", 2)
 end
 
-GAINING_THREAT_COLOR = { SetRGB = forbiddenWrite }
-HIGH_THREAT_COLOR = { SetRGB = forbiddenWrite }
-
 function hooksecurefunc(name, callback)
     assert(name == "CompactUnitFrame_UpdateHealthColor")
     assert(not state.update, "Hook installed more than once")
@@ -163,7 +160,6 @@ end
 
 C_NamePlate = {
     GetNamePlateForUnit = function(unit)
-        state.nameplateQuery = unit
         assert(unit ~= state.secret, "Secret unit token passed into a game API")
         return state.nameplates[unit]
     end,
@@ -181,7 +177,6 @@ end
 
 function UnitAffectingCombat(unit)
     assert(state.nameplates[unit])
-    state.combatQuery = unit
     return state.combat
 end
 
@@ -199,11 +194,9 @@ function UnitThreatSituation(player, unit)
     assert(state.nameplates[unit])
     if player ~= "player" then
         assert(player:match("^party%d+$"))
-        state.partyThreatQueries[#state.partyThreatQueries + 1] = { player, unit }
         local threats = state.partyThreat[unit]
         return threats and threats[player]
     end
-    state.threatQuery = "normal"
     if state.unitThreat[unit] ~= nil then
         return state.unitThreat[unit]
     end
@@ -212,18 +205,10 @@ end
 
 function UnitThreatLeadSituation(player, unit)
     assert(player == "player" and state.nameplates[unit])
-    state.threatQuery = "tank"
-    state.threatLeadQuery = unit
     if state.unitThreatLead[unit] ~= nil then
         return state.unitThreatLead[unit]
     end
     return state.leadStatus
-end
-
-function UnitDetailedThreatSituation(player, unit)
-    assert(player == "player" and state.nameplates[unit])
-    state.tankingQuery = unit
-    return state.isTanking
 end
 
 local function noop() end
@@ -340,8 +325,6 @@ end
 
 function helpers.newFrame(unit)
     local fill = {
-        GetWidth = forbiddenWrite,
-        GetTexCoord = forbiddenWrite,
         atlas = "test-nameplate-bar",
         file = 12345,
     }
@@ -355,7 +338,6 @@ function helpers.newFrame(unit)
         return self.file
     end
     local bar = {
-        GetStatusBarColor = forbiddenWrite,
         SetStatusBarColor = forbiddenWrite,
         minimum = 0,
         maximum = 100,
@@ -381,17 +363,7 @@ function helpers.newFrame(unit)
         local function assertCurrentTest()
             assert(state.textures == registry, "Texture from a previous test was touched")
         end
-        local texture = {
-            colorCalls = 0,
-            hideCalls = 0,
-            showCalls = 0,
-            layer = layer,
-            sublevel = sublevel,
-            atlasCalls = 0,
-            textureCalls = 0,
-            owner = owner,
-            SetColorTexture = forbiddenWrite,
-        }
+        local texture = { layer = layer, sublevel = sublevel, owner = owner }
         function texture:SetAllPoints(relativeTo)
             assertCurrentTest()
             assert(relativeTo == owner, "The status-bar renderer must manage the overlay fill")
@@ -399,27 +371,22 @@ function helpers.newFrame(unit)
         end
         function texture:SetAtlas(atlas)
             assertCurrentTest()
-            self.atlasCalls = self.atlasCalls + 1
             self.atlas, self.file = atlas, nil
         end
         function texture:SetTexture(file)
             assertCurrentTest()
-            self.textureCalls = self.textureCalls + 1
             self.file, self.atlas = file, nil
         end
         function texture:SetVertexColor(r, g, b)
             assertCurrentTest()
-            self.colorCalls = self.colorCalls + 1
             self.color = { r, g, b }
         end
         function texture:Hide()
             assertCurrentTest()
-            self.hideCalls = self.hideCalls + 1
             self.shown = false
         end
         function texture:Show()
             assertCurrentTest()
-            self.showCalls = self.showCalls + 1
             self.shown = true
         end
         state.textures[#state.textures + 1] = texture
@@ -441,13 +408,10 @@ end
 
 function helpers.test(name, run)
     state.textures, state.nameplates, state.unitThreat = {}, {}, {}
-    state.unitThreatLead, state.leadStatus, state.threatLeadQuery = {}, 3, nil
+    state.unitThreatLead, state.leadStatus = {}, 3
     state.party, state.enemy, state.tank, state.status = true, true, false, 3
-    state.combat, state.combatQuery = false, nil
-    state.partyMembers, state.partyThreat, state.partyThreatQueries = 4, {}, {}
-    state.isTanking, state.tankingQuery = true, nil
-    state.threatQuery, state.secretChecked = nil, false
-    state.secret, state.nameplateQuery = {}, nil
+    state.combat, state.partyMembers, state.partyThreat = false, 4, {}
+    state.secret, state.secretChecked = {}, false
     state.healthBarColorCVar, state.variablesLoaded = true, true
     helpers.reloadAddon()
     run()

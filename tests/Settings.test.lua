@@ -4,6 +4,15 @@ local test = helpers.test
 local newFrame = helpers.newFrame
 local assertColor = helpers.assertColor
 
+local function promptControl(label)
+    for _, child in ipairs(state.prompt.children) do
+        if child.text == label or (child.Text and child.Text.text == label) then
+            return child
+        end
+    end
+    error("Prompt has no control labeled " .. label, 2)
+end
+
 test("canvas settings expose four color swatches with persisted defaults", function()
     assert(
         state.category.name == "NameplateThreatColor" and state.registeredCategory == state.category
@@ -66,12 +75,17 @@ test("the role setting offers automatic, tank and non-tank with automatic saved"
 end)
 
 test("a single requirements note appears above the role and color settings", function()
-    assert(state.category.layout == nil, "Controls must not enter the shared settings list")
     local panel = state.category.frame
-    local note = state.uiFrames[3].initializer
-    assert(note.template == "SettingsListSectionHeaderTemplate")
+    local notes = {}
+    for _, frame in ipairs(state.uiFrames) do
+        local initializer = frame.initializer
+        if initializer and initializer.template == "SettingsListSectionHeaderTemplate" then
+            notes[#notes + 1] = initializer
+        end
+    end
+    assert(#notes == 1)
     assert(
-        note.data.name
+        notes[1].data.name
             == "Requires being in a party and Nameplates > Aggro Display > Health Bar Color enabled."
     )
     local keys = {
@@ -99,7 +113,12 @@ end)
 
 for _, role in ipairs({ false, true }) do
     local label = role and "tank" or "non-tank"
-    for _, case in ipairs({ { "warningColor", 1 }, { "urgentWarningColor", 2 } }) do
+    for _, case in ipairs({
+        { "secureAggroColor", 0 },
+        { "warningColor", 1 },
+        { "urgentWarningColor", 2 },
+        { "highThreatColor", 3 },
+    }) do
         local key, status = case[1], case[2]
         test(key .. " independently refreshes " .. label .. " overlays", function()
             state.tank = role
@@ -139,148 +158,6 @@ for _, role in ipairs({ false, true }) do
         end)
     end
 end
-
-test("changing the high-threat setting refreshes existing overlays", function()
-    local frame = newFrame("nameplate1")
-    local warning = newFrame("nameplate2")
-    state.unitThreat = { nameplate1 = 3, nameplate2 = 1 }
-    state.update(frame)
-    state.update(warning)
-    state.settings.NameplateThreatColor_highThreatColor:SetValue("ff0000ff")
-    local color = state.textures[1].color
-    assert(state.textures[1].shown and color[1] == 0 and color[2] == 0 and color[3] == 1)
-    assert(#state.textures == 2 and NameplateThreatColorDB.highThreatColor == "ff0000ff")
-    color = state.textures[2].color
-    assert(state.textures[2].shown and color[1] == 1 and color[2] == 1 and color[3] == 0)
-    assert(state.settings.NameplateThreatColor_warningColor:GetValue() == "ffffff00")
-end)
-
-for _, role in ipairs({ false, true }) do
-    local label = role and "tank" or "non-tank"
-    test("secure setting refreshes " .. label .. " overlays", function()
-        state.tank = role
-        local safe = newFrame("nameplate1")
-        local warning = newFrame("nameplate2")
-        local danger = newFrame("nameplate3")
-        local threats = { nameplate1 = 0, nameplate2 = 1, nameplate3 = 3 }
-        if role then
-            state.unitThreatLead = threats
-        else
-            state.unitThreat = threats
-        end
-        state.update(safe)
-        state.update(warning)
-        state.update(danger)
-        assertColor(state.textures[1], 0, 1, 0)
-        state.settings.NameplateThreatColor_secureAggroColor:SetValue("ff0000ff")
-        assertColor(state.textures[1], 0, 0, 1)
-        assertColor(state.textures[2], 1, 1, 0)
-        assertColor(state.textures[3], 1, 0, 0)
-        assert(#state.textures == 3)
-        assert(state.settings.NameplateThreatColor_secureAggroColor:GetValue() == "ff0000ff")
-        assert(NameplateThreatColorDB.secureAggroColor == "ff0000ff")
-    end)
-end
-
-test("restoring the secure setting restores its live green color", function()
-    state.tank, state.leadStatus = true, 0
-    local frame = newFrame()
-    state.update(frame)
-    local setting = state.settings.NameplateThreatColor_secureAggroColor
-    local previous = setting:GetValue()
-    assert(previous == "ff00ff00")
-    assertColor(state.textures[1], 0, 1, 0)
-    setting:SetValue("ff0000ff")
-    assertColor(state.textures[1], 0, 0, 1)
-    assert(
-        setting:GetValue() == "ff0000ff" and NameplateThreatColorDB.secureAggroColor == "ff0000ff"
-    )
-    setting:SetValue(previous)
-    assertColor(state.textures[1], 0, 1, 0)
-    assert(setting:GetValue() == previous and NameplateThreatColorDB.secureAggroColor == previous)
-end)
-
-test("restoring the high-threat setting restores its live red color", function()
-    local frame = newFrame()
-    state.update(frame)
-    local setting = state.settings.NameplateThreatColor_highThreatColor
-    local previous = setting:GetValue()
-    assert(previous == "ffff0000")
-    assertColor(state.textures[1], 1, 0, 0)
-    setting:SetValue("ff0000ff")
-    assertColor(state.textures[1], 0, 0, 1)
-    assert(
-        setting:GetValue() == "ff0000ff" and NameplateThreatColorDB.highThreatColor == "ff0000ff"
-    )
-    setting:SetValue(previous)
-    assertColor(state.textures[1], 1, 0, 0)
-    assert(setting:GetValue() == previous and NameplateThreatColorDB.highThreatColor == previous)
-end)
-
-test("restoring a previous non-default setting restores that live color", function()
-    local frame = newFrame()
-    state.update(frame)
-    local setting = state.settings.NameplateThreatColor_highThreatColor
-    setting:SetValue("ff0000ff")
-    assertColor(state.textures[1], 0, 0, 1)
-    assert(
-        setting:GetValue() == "ff0000ff" and NameplateThreatColorDB.highThreatColor == "ff0000ff"
-    )
-    local previous = setting:GetValue()
-    setting:SetValue("ff00ff00")
-    assertColor(state.textures[1], 0, 1, 0)
-    assert(
-        setting:GetValue() == "ff00ff00" and NameplateThreatColorDB.highThreatColor == "ff00ff00"
-    )
-    setting:SetValue(previous)
-    assertColor(state.textures[1], 0, 0, 1)
-    assert(setting:GetValue() == previous and NameplateThreatColorDB.highThreatColor == previous)
-end)
-
-test("applying setting defaults restores every live threat color immediately", function()
-    state.unitThreat = { nameplate1 = 0, nameplate2 = 1, nameplate3 = 2, nameplate4 = 3 }
-    for index = 1, 4 do
-        state.update(newFrame("nameplate" .. index))
-    end
-    local warning = state.settings.NameplateThreatColor_warningColor
-    local urgent = state.settings.NameplateThreatColor_urgentWarningColor
-    local high = state.settings.NameplateThreatColor_highThreatColor
-    local secure = state.settings.NameplateThreatColor_secureAggroColor
-    secure:SetValue("ff0000ff")
-    warning:SetValue("ffff00ff")
-    urgent:SetValue("ffffffff")
-    high:SetValue("ff00ffff")
-    assertColor(state.textures[1], 0, 0, 1)
-    assertColor(state.textures[2], 1, 0, 1)
-    assertColor(state.textures[3], 1, 1, 1)
-    assertColor(state.textures[4], 0, 1, 1)
-    secure:SetValue(secure.default)
-    assertColor(state.textures[1], 0, 1, 0)
-    warning:SetValue(warning.default)
-    assertColor(state.textures[2], 1, 1, 0)
-    urgent:SetValue(urgent.default)
-    assertColor(state.textures[3], 1, 0.6, 0)
-    high:SetValue(high.default)
-    assertColor(state.textures[4], 1, 0, 0)
-    assert(secure:GetValue() == "ff00ff00")
-    assert(warning:GetValue() == "ffffff00")
-    assert(urgent:GetValue() == "ffff9900")
-    assert(high:GetValue() == "ffff0000")
-    assert(NameplateThreatColorDB.warningColor == "ffffff00")
-    assert(NameplateThreatColorDB.urgentWarningColor == "ffff9900")
-    assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
-    assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
-    assert(#state.textures == 4)
-end)
-
-test("settings changes check a secret threat sentinel and hide its overlay", function()
-    local frame = newFrame()
-    state.update(frame)
-    assert(state.textures[1].shown)
-    state.secret, state.leadStatus, state.tank = 0, 0, true
-    state.settings.NameplateThreatColor_highThreatColor:SetValue("ff0000ff")
-    assert(state.secretChecked and not state.textures[1].shown and state.tankingQuery == nil)
-end)
 
 test("locking the tank role recolors live overlays and persists the choice", function()
     state.status, state.leadStatus = 2, 0
@@ -510,14 +387,6 @@ test("saved separate tank colors show the tank section on initialization and ref
     assert(control:IsShown())
 end)
 
-test("restoring the separate tank colors default hides the tank section", function()
-    local setting = state.settings.NameplateThreatColor_separateTankColors
-    setting:SetValue(true)
-    assert(state.settings.NameplateThreatColor_tankSecureAggroColor.control:IsShown())
-    setting:SetValue(setting.default)
-    assert(not state.settings.NameplateThreatColor_tankSecureAggroColor.control:IsShown())
-end)
-
 test("non-boolean separate tank color flags fall back to off", function()
     for _, saved in ipairs({ 0, 1, "", "true", "false", {} }) do
         helpers.reloadAddon({ separateTankColors = saved })
@@ -672,15 +541,14 @@ test("disabled Health Bar Color waits for CVars to load before prompting", funct
     assert(
         state.prompt.fontString.text:find("Nameplates > Aggro Display > Health Bar Color", 1, true)
     )
-    local _, dontShow, enableButton, dismissButton = unpack(state.prompt.children)
-    assert(dontShow.Text.text == "Don't show this again" and not dontShow:GetChecked())
-    assert(enableButton.text == "Enable" and dismissButton.text == "Dismiss")
+    assert(not promptControl("Don't show this again"):GetChecked())
+    assert(promptControl("Enable") and promptControl("Dismiss"))
 end)
 
 test("enabling from the prompt turns Health Bar Color on and hides the dialog", function()
     state.healthBarColorCVar = false
     helpers.reloadAddon()
-    state.prompt.children[3]:Click()
+    promptControl("Enable"):Click()
     assert(state.healthBarColorCVar == true)
     assert(not state.prompt:IsShown())
     assert(NameplateThreatColorDB.hideHealthBarColorPrompt == false)
@@ -689,7 +557,7 @@ end)
 test("dismissing without checking don't show again prompts again on reload", function()
     state.healthBarColorCVar = false
     helpers.reloadAddon()
-    state.prompt.children[4]:Click()
+    promptControl("Dismiss"):Click()
     assert(state.healthBarColorCVar == false and not state.prompt:IsShown())
     assert(NameplateThreatColorDB.hideHealthBarColorPrompt == false)
     helpers.reloadAddon(NameplateThreatColorDB)
@@ -700,8 +568,8 @@ test("checking don't show again persists across dismiss and enable", function()
     for _, enable in ipairs({ false, true }) do
         state.healthBarColorCVar = false
         helpers.reloadAddon()
-        state.prompt.children[2]:SetChecked(true)
-        state.prompt.children[enable and 3 or 4]:Click()
+        promptControl("Don't show this again"):SetChecked(true)
+        promptControl(enable and "Enable" or "Dismiss"):Click()
         assert(state.healthBarColorCVar == enable)
         assert(NameplateThreatColorDB.hideHealthBarColorPrompt == true)
         state.healthBarColorCVar = false

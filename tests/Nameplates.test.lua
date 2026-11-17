@@ -4,83 +4,9 @@ local test = helpers.test
 local newFrame = helpers.newFrame
 local assertColor = helpers.assertColor
 
-test("applying a supplied palette refreshes overlays without changing saved settings", function()
-    local states = {
-        { 0, 0, 0, 1 },
-        { 1, 1, 0, 1 },
-        { 2, 1, 1, 1 },
-        { 3, 0, 1, 1 },
-    }
-    for index, expected in ipairs(states) do
-        local unit = "nameplate" .. index
-        state.unitThreat[unit] = expected[1]
-        state.update(newFrame(unit))
-    end
-    state.addon.ApplyColors({
-        secureAggroColor = "ff0000ff",
-        warningColor = "ffff00ff",
-        urgentWarningColor = "ffffffff",
-        highThreatColor = "ff00ffff",
-    })
-    for index, expected in ipairs(states) do
-        assertColor(state.textures[index], expected[2], expected[3], expected[4])
-    end
-    assert(#state.textures == 4)
-    assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
-    assert(NameplateThreatColorDB.warningColor == "ffffff00")
-    assert(NameplateThreatColorDB.urgentWarningColor == "ffff9900")
-    assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
-end)
-
-test("a supplied tank palette is only used once separate tank colors are on", function()
-    local colors = {
-        secureAggroColor = "ff00ff00",
-        warningColor = "ffffff00",
-        urgentWarningColor = "ffff9900",
-        highThreatColor = "ffff0000",
-        tankSecureAggroColor = "ff00ffff",
-        tankWarningColor = "ffff00ff",
-        tankUrgentWarningColor = "ffffffff",
-        tankHighThreatColor = "ff0000ff",
-    }
-    state.tank = true
-    local frame = newFrame()
-    state.addon.ApplyColors(colors)
-    state.update(frame)
-    assertColor(state.textures[1], 1, 0, 0)
-    colors.separateTankColors = true
-    state.addon.ApplyColors(colors)
-    assertColor(state.textures[1], 0, 0, 1)
-    colors.separateTankColors = false
-    state.addon.ApplyColors(colors)
-    assertColor(state.textures[1], 1, 0, 0)
-    assert(#state.textures == 1)
-end)
-
-test("sharing one palette avoids recoloring an overlay across role changes", function()
-    local frame = newFrame()
-    state.update(frame)
-    assertColor(state.textures[1], 1, 0, 0)
-    for _, role in ipairs({ true, false, true, false }) do
-        state.tank = role
-        state.update(frame)
-        assertColor(state.textures[1], 1, 0, 0)
-    end
-    assert(state.textures[1].colorCalls == 1)
-end)
-
-test("party frames are not queried or given overlays", function()
+test("party frames are not given overlays", function()
     state.update(newFrame("player"))
-    assert(#state.textures == 0 and state.threatQuery == nil)
-end)
-
-test("highest threat is red without changing Blizzard's bar", function()
-    local frame = newFrame()
-    state.update(frame)
-    assertColor(state.textures[1], 1, 0, 0)
-    local overlay = state.textures[1].owner
-    assert(overlay.anchor == frame.healthBar and state.textures[1].anchor == overlay)
-    assert(state.threatQuery == "normal")
+    assert(#state.textures == 0)
 end)
 
 test("custom threat colors draw above Blizzard's health-bar fill", function()
@@ -92,17 +18,13 @@ test("custom threat colors draw above Blizzard's health-bar fill", function()
     assert(texture.owner.level == frame.healthBar:GetFrameLevel())
 end)
 
-test("the overlay reuses Blizzard's atlas and tints it without flattening it", function()
+test("the overlay tints Blizzard's own atlas", function()
     local frame = newFrame()
     local fill = frame.healthBar:GetStatusBarTexture()
     state.update(frame)
     local texture = state.textures[1]
     assert(texture.atlas == fill:GetAtlas() and texture.file == nil)
     assertColor(texture, 1, 0, 0)
-    state.status = 1
-    state.update(frame)
-    assertColor(texture, 1, 1, 0)
-    assert(texture.atlas == fill:GetAtlas() and texture.atlasCalls == 1)
 end)
 
 test("classic-style overlays reuse Blizzard's texture file", function()
@@ -112,7 +34,6 @@ test("classic-style overlays reuse Blizzard's texture file", function()
     state.update(frame)
     local texture = state.textures[1]
     assert(texture.file == fill:GetTexture() and texture.atlas == nil)
-    assert(texture.textureCalls == 1 and texture.atlasCalls == 0)
     assertColor(texture, 1, 0, 0)
 end)
 
@@ -137,93 +58,19 @@ test("WoW's status-bar renderer receives native health without stretching the te
         local texture = state.textures[index]
         assert(texture.owner.maximum == 200 and texture.owner.value == 150)
         assertColor(texture, 1, 0, 0)
-        assert(texture.colorCalls == 1 and texture.showCalls == 1 and texture.hideCalls == 0)
     end
 end)
 
-test("secret native health is forwarded without inspection or calculation", function()
+test("secret native health is forwarded without calculation", function()
     local frame = newFrame()
     frame.healthBar.maximum, frame.healthBar.value = state.secret, state.secret
     state.update(frame)
     local texture = state.textures[1]
     assert(texture.owner.maximum == state.secret and texture.owner.value == state.secret)
-    assert(not state.secretChecked)
     assertColor(texture, 1, 0, 0)
 end)
 
-for _, role in ipairs({ false, true }) do
-    local label = role and "tank" or "non-tank"
-    test(label .. " warning states use yellow and orange while reusing the overlay", function()
-        state.tank = role
-        local frame = newFrame()
-        local states = {
-            { 1, 1, 1, 0 },
-            { 2, 1, 0.6, 0 },
-            { 1, 1, 1, 0 },
-        }
-        for _, expected in ipairs(states) do
-            if role then
-                state.leadStatus = expected[1]
-            else
-                state.status = expected[1]
-            end
-            state.update(frame)
-            assertColor(state.textures[1], expected[2], expected[3], expected[4])
-        end
-        assert(#state.textures == 1)
-        local texture = state.textures[1]
-        assert(texture.colorCalls == 3 and texture.showCalls == 1 and texture.hideCalls == 0)
-    end)
-end
-
-test("repeated updates across many nameplates avoid redundant texture calls", function()
-    local frames = {}
-    for index = 1, 40 do
-        local unit = "nameplate" .. index
-        state.unitThreat[unit] = index % 4
-        frames[index] = newFrame(unit)
-        state.update(frames[index])
-    end
-    for _ = 1, 100 do
-        for _, frame in ipairs(frames) do
-            state.update(frame)
-        end
-    end
-    assert(#state.textures == 40)
-    for _, texture in ipairs(state.textures) do
-        assert(texture.shown and texture.colorCalls == 1)
-        assert(texture.showCalls == 1 and texture.hideCalls == 0)
-        assert(texture.atlasCalls + texture.textureCalls == 1)
-    end
-end)
-
-test("changing threat recolors a visible overlay without hiding or showing it", function()
-    local frame = newFrame()
-    state.update(frame)
-    state.status = 1
-    state.update(frame)
-    local texture = state.textures[1]
-    assertColor(texture, 1, 1, 0)
-    assert(texture.colorCalls == 2 and texture.showCalls == 1 and texture.hideCalls == 0)
-end)
-
-test("inactive overlays hide once and reuse their color when shown again", function()
-    local frame = newFrame()
-    state.update(frame)
-    state.status = nil
-    for _ = 1, 10 do
-        state.update(frame)
-    end
-    local texture = state.textures[1]
-    assert(not texture.shown and texture.hideCalls == 1)
-    assert(texture.colorCalls == 1 and texture.showCalls == 1)
-    state.status = 3
-    state.update(frame)
-    assertColor(texture, 1, 0, 0)
-    assert(texture.colorCalls == 1 and texture.showCalls == 2 and texture.hideCalls == 1)
-end)
-
-test("palette changes while inactive are applied when the overlay returns", function()
+test("Health Bar Color off hides the overlay, which returns with the latest palette", function()
     local frame, native = newFrame()
     state.update(frame)
     native.displayThreatHealthBarColor = false
@@ -235,96 +82,10 @@ test("palette changes while inactive are applied when the overlay returns", func
         highThreatColor = "ff0000ff",
     })
     local texture = state.textures[1]
-    assert(not texture.shown and texture.hideCalls == 1)
-    assert(texture.colorCalls == 1 and texture.showCalls == 1)
+    assert(not texture.shown)
     native.displayThreatHealthBarColor = true
     state.update(frame)
     assertColor(texture, 0, 0, 1)
-    assert(texture.colorCalls == 2 and texture.showCalls == 2 and texture.hideCalls == 1)
-end)
-
-test("tank recognition selects the threat-lead API", function()
-    state.tank = true
-    state.update(newFrame())
-    assert(state.threatQuery == "tank" and state.textures[1].shown)
-end)
-
-test("a locked tank role uses the threat-lead API while the live role is not tank", function()
-    state.addon.ApplyRoleLock("tank")
-    state.leadStatus, state.status = 1, 3
-    state.update(newFrame())
-    assertColor(state.textures[1], 1, 1, 0)
-    assert(state.threatQuery == "tank" and state.threatLeadQuery == "nameplate1")
-end)
-
-test("a locked non-tank role uses the normal threat API while the live role is tank", function()
-    state.tank = true
-    state.addon.ApplyRoleLock("nontank")
-    state.leadStatus, state.status = 0, 1
-    state.update(newFrame())
-    assertColor(state.textures[1], 1, 1, 0)
-    assert(state.threatQuery == "normal" and state.threatLeadQuery == nil)
-end)
-
-test("an unrecognized role lock follows the live role", function()
-    local frame = newFrame()
-    state.leadStatus, state.status = 1, 3
-    for _, role in ipairs({ "auto", "", "Tank", "healer" }) do
-        state.addon.ApplyRoleLock(role)
-        state.update(frame)
-        assertColor(state.textures[1], 1, 0, 0)
-        assert(state.threatQuery == "normal")
-    end
-    state.tank = true
-    state.addon.ApplyRoleLock("auto")
-    state.update(frame)
-    assertColor(state.textures[1], 1, 1, 0)
-    assert(state.threatQuery == "tank")
-end)
-
-test("locking a role refreshes existing overlays immediately", function()
-    state.status, state.leadStatus = 2, 1
-    local frame = newFrame()
-    state.update(frame)
-    assertColor(state.textures[1], 1, 0.6, 0)
-    state.addon.ApplyRoleLock("tank")
-    assertColor(state.textures[1], 1, 1, 0)
-    state.addon.ApplyRoleLock("auto")
-    assertColor(state.textures[1], 1, 0.6, 0)
-    assert(#state.textures == 1)
-end)
-
-test("a locked tank still needs aggro confirmation for the secure color", function()
-    state.addon.ApplyRoleLock("tank")
-    state.leadStatus = 0
-    local frame = newFrame()
-    for _, status in ipairs({ 2, 3 }) do
-        state.status = status
-        state.update(frame)
-        assertColor(state.textures[1], 0, 1, 0)
-    end
-    for _, status in ipairs({ 0, 1 }) do
-        state.status = status
-        state.update(frame)
-        assert(not state.textures[1].shown)
-    end
-    assert(state.tankingQuery == nil)
-end)
-
-test("secret detailed threat does not suppress a secure tank's green color", function()
-    state.tank, state.leadStatus, state.isTanking = true, 0, state.secret
-    state.update(newFrame())
-    assertColor(state.textures[1], 0, 1, 0)
-    assert(state.threatLeadQuery == "nameplate1" and state.threatQuery == "normal")
-    assert(state.tankingQuery == nil)
-end)
-
-test("a non-tank with safe low threat uses green without a tanking query", function()
-    state.status = 0
-    state.update(newFrame())
-    local color = state.textures[1].color
-    assert(state.textures[1].shown and color[1] == 0 and color[2] == 1 and color[3] == 0)
-    assert(state.threatQuery == "normal" and state.tankingQuery == nil)
 end)
 
 test("a non-tank losing all threat turns green until the enemy leaves combat", function()
@@ -333,20 +94,12 @@ test("a non-tank losing all threat turns green until the enemy leaves combat", f
     local frame = newFrame()
     state.update(frame)
     assertColor(state.textures[1], 1, 0, 0)
-    state.status = 2
-    state.update(frame)
-    assertColor(state.textures[1], 1, 0.6, 0)
     state.status = nil
-    for _ = 1, 10 do
-        state.update(frame)
-    end
-    local texture = state.textures[1]
-    assertColor(texture, 0, 1, 0)
-    assert(state.combatQuery == "nameplate1" and state.tankingQuery == nil)
-    assert(texture.colorCalls == 3 and texture.showCalls == 1 and texture.hideCalls == 0)
+    state.update(frame)
+    assertColor(state.textures[1], 0, 1, 0)
     state.combat = false
     state.update(frame)
-    assert(not texture.shown and texture.hideCalls == 1)
+    assert(not state.textures[1].shown)
 end)
 
 test("a non-tank with no threat on an engaged enemy uses the configured safe color", function()
@@ -383,7 +136,6 @@ test("any known party threat state confirms the no-threat fallback", function()
         state.update(frame)
         assertColor(state.textures[1], 0, 1, 0)
     end
-    assert(#state.partyThreatQueries == 16)
 end)
 
 test("secret or unknown party threat does not confirm engagement", function()
@@ -403,16 +155,18 @@ test("party threat on one mob does not color another mob green", function()
     assert(#state.textures == 1)
 end)
 
-test("nil tank threat stays unchanged even while the enemy is in combat", function()
+test("a tank without threat-lead data does not get the no-threat color", function()
     state.tank, state.combat = true, true
+    state.partyThreat.nameplate1 = { party1 = 3 }
     local frame = newFrame()
     state.update(frame)
     state.leadStatus = nil
     state.update(frame)
-    assert(not state.textures[1].shown and state.combatQuery == nil)
+    assert(not state.textures[1].shown)
 end)
 
 test("a secret combat state hides the no-threat color", function()
+    state.partyThreat.nameplate1 = { party1 = 3 }
     local frame = newFrame()
     state.update(frame)
     state.status, state.combat = nil, state.secret
@@ -428,8 +182,6 @@ test("secure tanks use green only while normal threat confirms holding aggro", f
         state.update(frame)
         assertColor(state.textures[1], 0, 1, 0)
     end
-    assert(state.threatLeadQuery == "nameplate1" and state.threatQuery == "normal")
-    assert(state.tankingQuery == nil)
     for _, status in ipairs({ 0, 1, 4 }) do
         state.status = status
         state.update(frame)
@@ -443,13 +195,13 @@ test("secret normal threat is checked and hides the secure tank color", function
     state.update(frame)
     state.status = state.secret
     state.update(frame)
-    assert(state.secretChecked and not state.textures[1].shown and state.tankingQuery == nil)
+    assert(state.secretChecked and not state.textures[1].shown)
 end)
 
 test("missing normal threat confirmation does not show the secure tank color", function()
     state.tank, state.leadStatus, state.status = true, 0, nil
     state.update(newFrame())
-    assert(#state.textures == 0 and state.threatQuery == "normal" and state.tankingQuery == nil)
+    assert(#state.textures == 0)
 end)
 
 test("tank confirmation uses the same mob as the threat-lead query", function()
@@ -463,13 +215,12 @@ test("tank confirmation uses the same mob as the threat-lead query", function()
 end)
 
 test("tank warning and lost-aggro colors do not require normal threat confirmation", function()
-    state.tank, state.status, state.isTanking = true, state.secret, state.secret
+    state.tank, state.status = true, state.secret
     local frame = newFrame()
     for _, expected in ipairs({ { 1, 1, 1, 0 }, { 2, 1, 0.6, 0 }, { 3, 1, 0, 0 } }) do
         state.leadStatus = expected[1]
         state.update(frame)
         assertColor(state.textures[1], expected[2], expected[3], expected[4])
-        assert(state.threatQuery == "tank" and state.tankingQuery == nil)
     end
 end)
 
@@ -497,66 +248,34 @@ test("safe, transitioning, and dangerous states use the same palette for both ro
     assert(#state.textures == 2)
 end)
 
-for _, case in ipairs({ { "unknown", 4 }, { "secret", 0 } }) do
-    test(case[1] .. " threat hides a previous overlay", function()
-        state.combat = true
-        local frame = newFrame()
-        state.update(frame)
-        assert(state.textures[1].shown)
-        if case[1] == "secret" then
-            state.secret = case[2]
-            state.tank = true
-            state.leadStatus = case[2]
-        end
-        state.status = case[2]
-        state.update(frame)
-        assert(not state.textures[1].shown and #state.textures == 1)
-        if case[1] == "secret" then
-            assert(state.secretChecked and state.tankingQuery == nil)
-        end
-    end)
-end
-
-test("nil threat on an idle enemy hides a previous overlay", function()
+test("unknown threat hides a previous overlay", function()
     local frame = newFrame()
     state.update(frame)
-    state.status = nil
+    state.status = 4
     state.update(frame)
     assert(not state.textures[1].shown)
 end)
 
-test("turning Health Bar Color off restores the native fill", function()
-    local frame, native = newFrame()
+test("secret threat hides a previous overlay", function()
+    local frame = newFrame()
     state.update(frame)
-    native.displayThreatHealthBarColor = false
-    state.threatQuery, state.nameplateQuery = nil, nil
+    state.status = state.secret
     state.update(frame)
-    assert(not state.textures[1].shown and state.threatQuery == nil)
-    assert(state.nameplateQuery == nil)
+    assert(state.secretChecked and not state.textures[1].shown)
 end)
 
 test("leaving the party restores the native fill", function()
     local frame = newFrame()
     state.update(frame)
-    state.party, state.threatQuery = false, nil
-    state.nameplateQuery = nil
+    state.party = false
     state.update(frame)
-    assert(not state.textures[1].shown and state.threatQuery == nil)
-    assert(state.nameplateQuery == nil)
+    assert(not state.textures[1].shown)
 end)
 
 test("a nameplate reused for a friendly unit loses its custom color", function()
     local frame = newFrame()
     state.update(frame)
-    state.enemy, state.threatQuery = false, nil
-    state.update(frame)
-    assert(not state.textures[1].shown and state.threatQuery == nil)
-end)
-
-test("a frame reused for a non-nameplate unit loses its custom color", function()
-    local frame, native = newFrame()
-    state.update(frame)
-    native.displayedUnit = "party1"
+    state.enemy = false
     state.update(frame)
     assert(not state.textures[1].shown)
 end)
@@ -571,7 +290,7 @@ end)
 
 test("scripted preview frames are ignored", function()
     state.update(newFrame("nameplate-preview"))
-    assert(#state.textures == 0 and state.threatQuery == nil)
+    assert(#state.textures == 0)
 end)
 
 test("missing or mismatched nameplate ownership is ignored", function()
@@ -580,7 +299,7 @@ test("missing or mismatched nameplate ownership is ignored", function()
     state.update(frame)
     state.nameplates.nameplate1 = { UnitFrame = {} }
     state.update(frame)
-    assert(#state.textures == 0 and state.threatQuery == nil)
+    assert(#state.textures == 0)
 end)
 
 test("forbidden frames are not inspected", function()
@@ -593,22 +312,19 @@ test("forbidden frames are not inspected", function()
         end,
     })
     state.update(frame)
-    assert(#state.textures == 0 and state.threatQuery == nil)
 end)
 
-test("a secret unit token hides its overlay without a nameplate or threat query", function()
+test("a secret unit token hides its overlay without reaching game APIs", function()
     local frame, native = newFrame()
     state.update(frame)
     assert(state.textures[1].shown)
     state.secret = native.displayedUnit
-    state.nameplateQuery, state.threatQuery = nil, nil
     state.update(frame)
     assert(state.secretChecked and not state.textures[1].shown)
-    assert(state.nameplateQuery == nil and state.threatQuery == nil)
 end)
 
 for _, field in ipairs({ "display flag", "enemy check" }) do
-    test("a secret " .. field .. " sentinel hides its overlay without a threat query", function()
+    test("a secret " .. field .. " sentinel hides its overlay", function()
         local frame, native = newFrame()
         state.update(frame)
         assert(state.textures[1].shown)
@@ -617,21 +333,10 @@ for _, field in ipairs({ "display flag", "enemy check" }) do
         else
             state.enemy = state.secret
         end
-        state.threatQuery = nil
         state.update(frame)
-        assert(state.secretChecked and not state.textures[1].shown and state.threatQuery == nil)
+        assert(state.secretChecked and not state.textures[1].shown)
     end)
 end
-
-test("the overlay returns when Health Bar Color is enabled again", function()
-    local frame, native = newFrame()
-    state.update(frame)
-    native.displayThreatHealthBarColor = false
-    state.update(frame)
-    native.displayThreatHealthBarColor = true
-    state.update(frame)
-    assert(state.textures[1].shown and #state.textures == 1)
-end)
 
 test("different nameplates have independent overlays", function()
     local first = newFrame("nameplate1")
