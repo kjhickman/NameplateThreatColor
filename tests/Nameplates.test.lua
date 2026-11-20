@@ -224,6 +224,81 @@ test("tank warning and lost-aggro colors do not require normal threat confirmati
     end
 end)
 
+test("the co-tank color follows actual aggro on each enemy during a raid tank swap", function()
+    state.party, state.tank, state.raidIndex = false, true, 2
+    state.raidRoles = { "DAMAGER", "TANK", "TANK" }
+    state.raidThreat.nameplate1 = { raid3 = 2 }
+    state.unitThreatLead = { nameplate1 = 1, nameplate2 = 0 }
+    state.unitThreat = { nameplate1 = 1, nameplate2 = 3 }
+    local boss = newFrame("nameplate1")
+    local add = newFrame("nameplate2")
+    state.update(boss)
+    state.update(add)
+    local bossColor, addColor = state.textures[1], state.textures[2]
+    assertColor(bossColor, 0x3b / 255, 0x82 / 255, 0xf6 / 255)
+    assertColor(addColor, 0, 1, 0)
+
+    state.unitThreat.nameplate1, state.unitThreatLead.nameplate1 = 2, 2
+    state.update(boss)
+    assertColor(bossColor, 1, 0.6, 0)
+    state.unitThreat.nameplate1, state.unitThreatLead.nameplate1 = 3, 0
+    state.raidThreat.nameplate1.raid3 = 1
+    state.update(boss)
+    assertColor(bossColor, 0, 1, 0)
+end)
+
+test("the co-tank must be assigned Tank and holding aggro, not just on the threat list", function()
+    state.tank, state.raidIndex, state.status = true, 1, nil
+    state.raidRoles = { "TANK", "DAMAGER", "TANK" }
+    local frame = newFrame()
+    local threats = { raid2 = 3, raid3 = 1 }
+    state.raidThreat.nameplate1 = threats
+    state.update(frame)
+    assertColor(state.textures[1], 1, 0, 0)
+
+    threats.raid2, threats.raid3, state.leadStatus = 1, 3, nil
+    state.update(frame)
+    assertColor(state.textures[1], 0x3b / 255, 0x82 / 255, 0xf6 / 255)
+end)
+
+test("secret raid, role or threat data does not confirm co-tank aggro", function()
+    state.tank, state.raidIndex, state.status = true, 1, 0
+    state.raidRoles = { "TANK", "TANK" }
+    state.raidThreat.nameplate1 = { raid2 = 3 }
+    local frame = newFrame()
+    for _, case in ipairs({
+        { state, "raidIndex" },
+        { state, "status" },
+        { state.raidRoles, 2 },
+        { state.raidThreat.nameplate1, "raid2" },
+    }) do
+        local source, key = case[1], case[2]
+        local original = source[key]
+        state.secretChecked, source[key] = false, state.secret
+        state.update(frame)
+        assert(state.secretChecked)
+        assertColor(state.textures[1], 1, 0, 0)
+        source[key] = original
+    end
+end)
+
+test("raid role and roster changes refresh nameplates even without a threat update", function()
+    state.party, state.tank, state.raidIndex = false, true, 1
+    state.status, state.leadStatus = nil, nil
+    state.raidRoles = { "TANK", "DAMAGER" }
+    state.raidThreat.nameplate1 = { raid2 = 3 }
+    state.update(newFrame())
+    assert(#state.textures == 0)
+
+    state.raidRoles[2] = "TANK"
+    state.events.PLAYER_ROLES_ASSIGNED()
+    assertColor(state.textures[1], 0x3b / 255, 0x82 / 255, 0xf6 / 255)
+
+    state.raidIndex = nil
+    state.events.GROUP_ROSTER_UPDATE()
+    assert(not state.textures[1].shown)
+end)
+
 test("safe, transitioning, and dangerous states use the same palette for both roles", function()
     local states = {
         { 0, 0, 1, 0 },

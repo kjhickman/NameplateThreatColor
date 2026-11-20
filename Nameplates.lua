@@ -2,12 +2,41 @@ local _, addon = ...
 
 local nonTankColors = {}
 local tankColors = {}
+local coTankColor
 local separateColors = false
 local overlays = {}
 local partyUnits = { "party1", "party2", "party3", "party4" }
+local raidUnits = {}
+for index = 1, MAX_RAID_MEMBERS do
+    raidUnits[index] = "raid" .. index
+end
 
 -- nil follows the player's live role; true or false pins it to a locked choice.
 local lockedRole
+
+local function IsCoTankHoldingAggro(unit, playerRaidIndex)
+    local playerStatus = UnitThreatSituation("player", unit)
+    if
+        issecretvalue(playerStatus)
+        or (playerStatus ~= nil and playerStatus ~= 0 and playerStatus ~= 1)
+    then
+        return false
+    end
+
+    for index = 1, GetNumGroupMembers() do
+        if index ~= playerRaidIndex then
+            local member = raidUnits[index]
+            local role = UnitGroupRolesAssigned(member)
+            if not issecretvalue(role) and role == "TANK" then
+                local status = UnitThreatSituation(member, unit)
+                if not issecretvalue(status) and (status == 2 or status == 3) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
 
 local function GetThreatColor(frame)
     -- Reject restricted (secret) values before inspecting them or branching on them.
@@ -18,7 +47,7 @@ local function GetThreatColor(frame)
     end
 
     local enabled = frame.displayThreatHealthBarColor
-    if issecretvalue(enabled) or not enabled or not UnitInParty("player") then
+    if issecretvalue(enabled) or not enabled then
         return
     end
 
@@ -39,6 +68,22 @@ local function GetThreatColor(frame)
     if isTank == nil then
         isTank = PlayerUtil.IsPlayerEffectivelyTank()
     end
+    local raidIndex
+    if isTank then
+        raidIndex = UnitInRaid("player")
+        if issecretvalue(raidIndex) then
+            raidIndex = nil
+        end
+    end
+    if not raidIndex and not UnitInParty("player") then
+        return
+    end
+
+    -- The co-tank color follows actual aggro, independent of the player's threat lead.
+    if coTankColor and raidIndex and IsCoTankHoldingAggro(unit, raidIndex) then
+        return coTankColor
+    end
+
     local palette = (isTank and separateColors) and tankColors or nonTankColors
 
     -- These APIs report different per-player states, not a shared state for the mob.
@@ -133,13 +178,20 @@ local function UpdateThreatColor(frame)
 end
 
 local function RefreshOverlays()
-    for frame in pairs(overlays) do
-        UpdateThreatColor(frame)
+    for _, nameplate in pairs(C_NamePlate.GetNamePlates()) do
+        if not nameplate:IsForbidden() and nameplate.UnitFrame then
+            UpdateThreatColor(nameplate.UnitFrame)
+        end
     end
 end
 
 -- Run after Blizzard's normal update without replacing its health-color logic.
 hooksecurefunc("CompactUnitFrame_UpdateHealthColor", UpdateThreatColor)
+
+local rosterEvents = CreateFrame("Frame")
+rosterEvents:RegisterEvent("GROUP_ROSTER_UPDATE")
+rosterEvents:RegisterEvent("PLAYER_ROLES_ASSIGNED")
+rosterEvents:SetScript("OnEvent", RefreshOverlays)
 
 function addon.ApplyRoleLock(role)
     if role == "tank" then
@@ -161,6 +213,9 @@ local function BuildPalette(palette, secure, warning, urgent, high)
 end
 
 function addon.ApplyColors(colors)
+    coTankColor = colors.showCoTankColor
+            and { CreateColorFromHexString(colors.coTankAggroColor):GetRGB() }
+        or nil
     BuildPalette(
         nonTankColors,
         colors.secureAggroColor,

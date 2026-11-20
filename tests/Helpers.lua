@@ -19,6 +19,7 @@ EventUtil = {
 }
 
 Enum = { NamePlateThreatDisplay = { HealthBarColor = 3 } }
+MAX_RAID_MEMBERS = 40
 UIParent = {
     IsShown = function()
         return true
@@ -163,11 +164,33 @@ C_NamePlate = {
         assert(unit ~= state.secret, "Secret unit token passed into a game API")
         return state.nameplates[unit]
     end,
+    GetNamePlates = function()
+        local plates = {}
+        for _, plate in pairs(state.nameplates) do
+            plates[#plates + 1] = plate
+        end
+        return plates
+    end,
 }
 
 function UnitInParty(unit)
     assert(unit == "player")
     return state.party
+end
+
+function UnitInRaid(unit)
+    assert(unit == "player")
+    return state.raidIndex
+end
+
+function GetNumGroupMembers()
+    return #state.raidRoles
+end
+
+function UnitGroupRolesAssigned(unit)
+    local index = assert(tonumber(unit:match("^raid(%d+)$")))
+    assert(index ~= state.raidIndex, "The player is not a co-tank")
+    return state.raidRoles[index]
 end
 
 function UnitCanAttack(player, unit)
@@ -193,8 +216,13 @@ end
 function UnitThreatSituation(player, unit)
     assert(state.nameplates[unit])
     if player ~= "player" then
-        assert(player:match("^party%d+$"))
-        local threats = state.partyThreat[unit]
+        local threats
+        if player:match("^raid%d+$") then
+            threats = state.raidThreat[unit]
+        else
+            assert(player:match("^party%d+$"))
+            threats = state.partyThreat[unit]
+        end
         return threats and threats[player]
     end
     if state.unitThreat[unit] ~= nil then
@@ -262,6 +290,12 @@ function CreateFrame(kind, name, parent, template)
         end
         function frame:SetScript(event, handler)
             self.scripts[event] = handler
+        end
+        function frame:RegisterEvent(event)
+            assert(not state.events[event])
+            state.events[event] = function()
+                self.scripts.OnEvent(self, event)
+            end
         end
         function frame:Click()
             self.scripts.OnClick(self)
@@ -402,7 +436,12 @@ function helpers.newFrame(unit)
         end,
     }
     local frame = setmetatable({}, { __index = native, __newindex = forbiddenWrite })
-    state.nameplates[native.displayedUnit] = { UnitFrame = frame }
+    state.nameplates[native.displayedUnit] = {
+        UnitFrame = frame,
+        IsForbidden = function()
+            return false
+        end,
+    }
     return frame, native
 end
 
@@ -411,6 +450,7 @@ function helpers.test(name, run)
     state.unitThreatLead, state.leadStatus = {}, 3
     state.party, state.enemy, state.tank, state.status = true, true, false, 3
     state.combat, state.partyMembers, state.partyThreat = false, 4, {}
+    state.raidIndex, state.raidRoles, state.raidThreat = nil, {}, {}
     state.secret, state.secretChecked = {}, false
     state.healthBarColorCVar, state.variablesLoaded = true, true
     helpers.reloadAddon()
@@ -436,7 +476,7 @@ function helpers.reloadAddon(saved, charSaved)
     NameplateThreatColorDB, NameplateThreatColorCharDB = saved, charSaved
     state.update, state.initialize, state.category, state.registeredCategory = nil, nil, nil, nil
     state.onVariablesLoaded, state.prompt = nil, nil
-    state.settings, state.uiFrames = {}, {}
+    state.settings, state.uiFrames, state.events = {}, {}, {}
     state.addon = loadAddon()
     assert(state.update, "Health-color post-hook was not installed")
     assert(

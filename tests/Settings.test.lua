@@ -13,7 +13,7 @@ local function promptControl(label)
     error("Prompt has no control labeled " .. label, 2)
 end
 
-test("canvas settings expose four color swatches with persisted defaults", function()
+test("canvas settings expose shared and co-tank color swatches with persisted defaults", function()
     assert(
         state.category.name == "NameplateThreatColor" and state.registeredCategory == state.category
     )
@@ -21,6 +21,7 @@ test("canvas settings expose four color swatches with persisted defaults", funct
     local urgent = state.settings.NameplateThreatColor_urgentWarningColor
     local high = state.settings.NameplateThreatColor_highThreatColor
     local secure = state.settings.NameplateThreatColor_secureAggroColor
+    local coTank = state.settings.NameplateThreatColor_coTankAggroColor
     assert(warning.swatch and urgent.swatch and high.swatch and secure.swatch)
     assert(secure.label == "Secure aggro color")
     assert(warning.label == "Threat warning color")
@@ -33,11 +34,10 @@ test("canvas settings expose four color swatches with persisted defaults", funct
     assert(NameplateThreatColorDB.urgentWarningColor == "ffff9900")
     assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
     assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
-    local count = 0
-    for _ in pairs(state.settings) do
-        count = count + 1
-    end
-    assert(count == 10)
+    assert(coTank.swatch and coTank.label == "Co-tank holding aggro")
+    assert(
+        coTank:GetValue() == "ff3b82f6" and NameplateThreatColorDB.coTankAggroColor == "ff3b82f6"
+    )
     assert(not state.settings.NameplateThreatColor_roleLock.swatch)
     assert(not state.settings.NameplateThreatColor_separateTankColors.swatch)
 end)
@@ -86,7 +86,7 @@ test("a single requirements note appears above the role and color settings", fun
     assert(#notes == 1)
     assert(
         notes[1].data.name
-            == "Requires being in a party and Nameplates > Aggro Display > Health Bar Color enabled."
+            == "Requires a party or raid and Nameplates > Aggro Display > Health Bar Color enabled."
     )
     local keys = {
         "roleLock",
@@ -94,6 +94,8 @@ test("a single requirements note appears above the role and color settings", fun
         "warningColor",
         "urgentWarningColor",
         "highThreatColor",
+        "showCoTankColor",
+        "coTankAggroColor",
         "separateTankColors",
         "tankSecureAggroColor",
         "tankWarningColor",
@@ -263,6 +265,8 @@ test("missing saved colors get defaults without overwriting existing choices", f
     assert(NameplateThreatColorDB.urgentWarningColor == "ffff9900")
     assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
     assert(NameplateThreatColorDB.secureAggroColor == "ff00ff00")
+    assert(NameplateThreatColorDB.coTankAggroColor == "ff3b82f6")
+    assert(NameplateThreatColorDB.showCoTankColor == true)
     assert(NameplateThreatColorCharDB.roleLock == "auto")
 end)
 
@@ -285,6 +289,7 @@ test("malformed saved colors are replaced without changing valid entries", funct
         warningColor = "ffffff00",
         urgentWarningColor = "ffff9900",
         highThreatColor = "ffff0000",
+        coTankAggroColor = "ff3b82f6",
         tankSecureAggroColor = "ff00ff00",
         tankWarningColor = "ffffff00",
         tankUrgentWarningColor = "ffff9900",
@@ -295,6 +300,7 @@ test("malformed saved colors are replaced without changing valid entries", funct
         warningColor = "FF445566",
         urgentWarningColor = "00AaBbCc",
         highThreatColor = "aB778899",
+        coTankAggroColor = "ff123456",
         tankSecureAggroColor = "11223344",
         tankWarningColor = "FF556677",
         tankUrgentWarningColor = "00BbCcDd",
@@ -348,6 +354,8 @@ test("tank swatches appear only while separate tank colors is enabled", function
         "warningColor",
         "urgentWarningColor",
         "highThreatColor",
+        "showCoTankColor",
+        "coTankAggroColor",
         "separateTankColors",
     }
     local tankKeys = {
@@ -372,6 +380,72 @@ test("tank swatches appear only while separate tank colors is enabled", function
     checkbox:SetValue(false)
     for _, key in ipairs(tankKeys) do
         assert(not state.settings["NameplateThreatColor_" .. key].control:IsShown())
+    end
+end)
+
+test("the co-tank swatch refreshes live colors and follows the role lock independently", function()
+    state.raidIndex, state.status = 1, 1
+    state.raidRoles = { "TANK", "TANK" }
+    state.raidThreat.nameplate1 = { raid2 = 3 }
+    local frame = newFrame()
+    state.update(frame)
+    local texture = state.textures[1]
+    assertColor(texture, 1, 1, 0)
+
+    local role = state.settings.NameplateThreatColor_roleLock
+    role:SetValue("tank")
+    assertColor(texture, 0x3b / 255, 0x82 / 255, 0xf6 / 255)
+    local setting = state.settings.NameplateThreatColor_coTankAggroColor
+    setting:SetValue("ff00ffff")
+    assertColor(texture, 0, 1, 1)
+
+    state.tank = true
+    role:SetValue("nontank")
+    assertColor(texture, 1, 1, 0)
+    role:SetValue("auto")
+    state.raidIndex = nil
+    state.update(frame)
+    assertColor(texture, 1, 0, 0)
+end)
+
+test("the co-tank toggle hides its swatch and restores normal tank colors", function()
+    state.tank, state.raidIndex, state.status = true, 1, 1
+    state.raidRoles = { "TANK", "TANK" }
+    state.raidThreat.nameplate1 = { raid2 = 3 }
+    local frame = newFrame()
+    local checkbox = state.settings.NameplateThreatColor_showCoTankColor
+    local swatch = state.settings.NameplateThreatColor_coTankAggroColor
+    local tankSwatch = state.settings.NameplateThreatColor_tankHighThreatColor
+    assert(checkbox.checkbox and checkbox.label == "Show co-tank aggro color")
+    assert(checkbox.default == true and checkbox:GetValue() == true and swatch.control:IsShown())
+    tankSwatch:SetValue("ff996633")
+    state.settings.NameplateThreatColor_separateTankColors:SetValue(true)
+    swatch:SetValue("ff00ffff")
+    state.update(frame)
+    local texture = state.textures[1]
+    assertColor(texture, 0, 1, 1)
+
+    checkbox:SetValue(false)
+    assert(checkbox.control:IsShown() and not swatch.control:IsShown())
+    assert(tankSwatch.control:IsShown())
+    assertColor(texture, 0x99 / 255, 0x66 / 255, 0x33 / 255)
+    assert(NameplateThreatColorDB.showCoTankColor == false)
+    assert(NameplateThreatColorDB.coTankAggroColor == "ff00ffff")
+
+    helpers.reloadAddon(NameplateThreatColorDB)
+    checkbox = state.settings.NameplateThreatColor_showCoTankColor
+    swatch = state.settings.NameplateThreatColor_coTankAggroColor
+    assert(checkbox:GetValue() == false and not swatch.control:IsShown())
+    checkbox:SetValue(true)
+    assert(swatch.control:IsShown())
+    assertColor(state.textures[#state.textures], 0, 1, 1)
+end)
+
+test("malformed co-tank toggle values fall back to enabled", function()
+    for _, saved in ipairs({ 0, 1, "", "true", "false", {} }) do
+        helpers.reloadAddon({ showCoTankColor = saved })
+        assert(NameplateThreatColorDB.showCoTankColor == true)
+        assert(state.settings.NameplateThreatColor_coTankAggroColor.control:IsShown())
     end
 end)
 
