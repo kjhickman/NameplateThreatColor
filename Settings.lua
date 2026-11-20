@@ -5,12 +5,14 @@ local defaults = {
     warningColor = "ffffff00",
     urgentWarningColor = "ffff9900",
     highThreatColor = "ffff0000",
+    coTankAggroColor = "ff3b82f6",
     tankSecureAggroColor = "ff00ff00",
     tankWarningColor = "ffffff00",
     tankUrgentWarningColor = "ffff9900",
     tankHighThreatColor = "ffff0000",
 }
 
+local defaultShowCoTankColor = true
 local defaultSeparateTankColors = false
 local defaultRoleLock = "auto"
 local threatDisplayCVar = "nameplateThreatDisplay"
@@ -64,31 +66,23 @@ local function RegisterColorSetting(category, parent, offset, key, label, toolti
     return AddControl(parent, Settings.CreateColorSwatchInitializer(setting, nil, tooltip), offset)
 end
 
-local function RegisterSeparateTankColorsSetting(category, panel, tankSection)
+local function RegisterColorToggle(category, panel, offset, key, label, default, tooltip)
     local setting = Settings.RegisterProxySetting(
         category,
-        "NameplateThreatColor_separateTankColors",
+        "NameplateThreatColor_" .. key,
         Settings.VarType.Boolean,
-        "Separate tank colors",
-        defaultSeparateTankColors,
+        label,
+        default,
         function()
-            return NameplateThreatColorDB.separateTankColors
+            return NameplateThreatColorDB[key]
         end,
         function(value)
-            NameplateThreatColorDB.separateTankColors = value
+            NameplateThreatColorDB[key] = value
             addon.ApplyColors(NameplateThreatColorDB)
-            tankSection:SetShown(value)
+            panel:OnRefresh()
         end
     )
-    AddControl(
-        panel,
-        Settings.CreateCheckboxInitializer(
-            setting,
-            nil,
-            "Give tanking its own set of colors. While off, both roles share the colors above."
-        ),
-        232
-    )
+    AddControl(panel, Settings.CreateCheckboxInitializer(setting, nil, tooltip), offset)
 end
 
 local function RegisterRoleLockSetting(category, panel)
@@ -198,6 +192,9 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
     if type(NameplateThreatColorDB.separateTankColors) ~= "boolean" then
         NameplateThreatColorDB.separateTankColors = defaultSeparateTankColors
     end
+    if type(NameplateThreatColorDB.showCoTankColor) ~= "boolean" then
+        NameplateThreatColorDB.showCoTankColor = defaultShowCoTankColor
+    end
     if type(NameplateThreatColorDB.hideHealthBarColorPrompt) ~= "boolean" then
         NameplateThreatColorDB.hideHealthBarColorPrompt = false
     end
@@ -217,18 +214,14 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
     local panel = CreateFrame("Frame")
     local category = Settings.RegisterCanvasLayoutCategory(panel, "NameplateThreatColor")
     local tankSection = CreateFrame("Frame", nil, panel)
-    tankSection:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -266)
-    tankSection:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -266)
+    tankSection:SetPoint("TOPLEFT", panel, "TOPLEFT", 0, -334)
+    tankSection:SetPoint("TOPRIGHT", panel, "TOPRIGHT", 0, -334)
     tankSection:SetHeight(136)
-    panel.OnRefresh = function()
-        tankSection:SetShown(NameplateThreatColorDB.separateTankColors)
-    end
-    panel:OnRefresh()
 
     local note = AddControl(
         panel,
         Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", {
-            name = "Requires being in a party and Nameplates > Aggro Display > Health Bar Color enabled.",
+            name = "Requires a party or raid and Nameplates > Aggro Display > Health Bar Color enabled.",
         }),
         0
     )
@@ -267,7 +260,37 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
         "Pulled / lost aggro color",
         "For tanks: lost or unsafe aggro. For non-tanks: holding aggro."
     )
-    RegisterSeparateTankColorsSetting(category, panel, tankSection)
+    RegisterColorToggle(
+        category,
+        panel,
+        232,
+        "showCoTankColor",
+        "Show co-tank aggro color",
+        defaultShowCoTankColor,
+        "Use a distinct nameplate color when another tank is holding aggro in your raid."
+    )
+    local coTankSwatch = RegisterColorSetting(
+        category,
+        panel,
+        266,
+        "coTankAggroColor",
+        "Co-tank holding aggro",
+        "While tanking in a raid, marks an enemy when another player assigned the Tank role is holding aggro and you are not."
+    )
+    RegisterColorToggle(
+        category,
+        panel,
+        300,
+        "separateTankColors",
+        "Separate tank colors",
+        defaultSeparateTankColors,
+        "Give tanking its own set of threat colors. This does not affect the co-tank color."
+    )
+    panel.OnRefresh = function()
+        coTankSwatch:SetShown(NameplateThreatColorDB.showCoTankColor)
+        tankSection:SetShown(NameplateThreatColorDB.separateTankColors)
+    end
+    panel:OnRefresh()
     RegisterColorSetting(
         category,
         tankSection,
