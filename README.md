@@ -2,11 +2,6 @@
 
 A WoW: Forever addon for customizing the blizzard nameplate threat colors.
 
-When you're tanking in a raid, **Co-tank holding aggro** marks enemies held by
-another player assigned the Tank role. It defaults to blue and can be changed
-or turned off with **Show co-tank aggro color** in the addon settings,
-independently of **Separate tank colors**.
-
 ## Development
 
 Install [StyLua](https://github.com/JohnnyMorganz/StyLua) and
