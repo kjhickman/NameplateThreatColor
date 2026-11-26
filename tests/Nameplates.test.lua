@@ -313,9 +313,83 @@ test("a raid main tank assignment also qualifies as a co-tank", function()
     assertColor(state.textures[1], 0x3b / 255, 0x82 / 255, 0xf6 / 255)
 
     state.secretChecked, state.raidMainTanks[2] = false, state.secret
-    state.update(frame)
+    state.events.GROUP_ROSTER_UPDATE()
     assert(state.secretChecked)
     assertColor(state.textures[1], 1, 0, 0)
+end)
+
+test("raid co-tank roles are cached until roster or role events fire", function()
+    state.party, state.tank, state.raidIndex, state.status = false, true, 1, 0
+    state.raidRoles = { "TANK", "DAMAGER", "DAMAGER", "TANK" }
+    state.raidThreat.nameplate1 = { raid4 = 3 }
+    local frame = newFrame()
+    state.update(frame)
+    assertColor(state.textures[1], 0x3b / 255, 0x82 / 255, 0xf6 / 255)
+    assert(state.roleChecks == 3)
+
+    state.update(frame)
+    state.update(frame)
+    assert(state.roleChecks == 3)
+
+    state.raidRoles[4] = "DAMAGER"
+    state.events.PLAYER_ROLES_ASSIGNED()
+    assert(state.roleChecks == 6)
+    assertColor(state.textures[1], 1, 0, 0)
+end)
+
+test("non-tank raid fallback checks raid tanks before scanning other members", function()
+    state.party, state.partyMembers = false, 0
+    state.raidIndex = 1
+    state.raidRoles = { "DAMAGER", "DAMAGER", "DAMAGER", "DAMAGER", "TANK" }
+    state.status, state.combat = nil, true
+    state.raidThreat.nameplate1 = { raid5 = 3 }
+    local frame = newFrame()
+    state.update(frame)
+    assertColor(state.textures[1], 0, 1, 0)
+    assert(state.unitThreatChecks == 1)
+end)
+
+test("secure tanks in a raid query their own threat once per update", function()
+    state.party, state.tank, state.raidIndex = false, true, 1
+    state.raidRoles = { "TANK", "TANK" }
+    state.status, state.leadStatus = 3, 0
+    local frame = newFrame()
+    state.update(frame)
+    assertColor(state.textures[1], 0, 1, 0)
+    assert(state.playerThreatChecks == 1)
+end)
+
+test("enemy players skip threat scans and secret player checks hide overlays", function()
+    local frame = newFrame()
+    state.combat = true
+    state.partyThreat.nameplate1 = { party1 = 3 }
+    state.isPlayer = true
+    state.update(frame)
+    assert(#state.textures == 0 and state.playerThreatChecks == 0 and state.unitThreatChecks == 0)
+
+    state.isPlayer = false
+    state.update(frame)
+    assertColor(state.textures[1], 1, 0, 0)
+
+    state.secretChecked, state.isPlayer = false, state.secret
+    state.update(frame)
+    assert(state.secretChecked and not state.textures[1].shown)
+end)
+
+test("frames without threat health bar coloring exit before inspecting unit tokens", function()
+    local frame = setmetatable({}, {
+        __index = function(_, key)
+            if key == "IsForbidden" then
+                return function()
+                    return false
+                end
+            end
+            assert(key == "displayThreatHealthBarColor", "Inspected " .. tostring(key))
+            return nil
+        end,
+    })
+    state.update(frame)
+    assert(#state.textures == 0)
 end)
 
 test("secret raid, role or threat data does not confirm co-tank aggro", function()

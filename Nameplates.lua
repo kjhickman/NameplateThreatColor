@@ -14,34 +14,62 @@ end
 -- nil follows the player's live role; true or false pins it to a locked choice.
 local lockedRole
 local lastEffectiveTank
+local coTankUnits = {}
+local coTankUnitsDirty = true
+local cachedRaidIndex
 
 local function IsRaidTank(member)
+    local sawSecret = false
     local role = UnitGroupRolesAssigned(member)
-    if not issecretvalue(role) and role == "TANK" then
-        return true
+    if issecretvalue(role) then
+        sawSecret = true
+    elseif role == "TANK" then
+        return true, false
     end
     local mainTank = GetPartyAssignment("MAINTANK", member)
-    return not issecretvalue(mainTank) and mainTank and true or false
+    if issecretvalue(mainTank) then
+        return false, true
+    end
+    if mainTank then
+        return true, false
+    end
+    return false, sawSecret
 end
 
-local function IsCoTankHoldingAggro(unit, playerRaidIndex)
-    local playerStatus = UnitThreatSituation("player", unit)
-    if
-        issecretvalue(playerStatus)
-        or (playerStatus ~= nil and playerStatus ~= 0 and playerStatus ~= 1)
-    then
-        return false
+local function GetCoTankUnits(playerRaidIndex)
+    if not coTankUnitsDirty and cachedRaidIndex == playerRaidIndex then
+        return coTankUnits
     end
 
+    local count = 0
+    local sawSecret = false
     for index = 1, GetNumGroupMembers() do
         if index ~= playerRaidIndex then
             local member = raidUnits[index]
-            if member and IsRaidTank(member) then
-                local status = UnitThreatSituation(member, unit)
-                if not issecretvalue(status) and (status == 2 or status == 3) then
-                    return true
+            if member then
+                local isRaidTank, isSecret = IsRaidTank(member)
+                if isSecret then
+                    sawSecret = true
+                elseif isRaidTank then
+                    count = count + 1
+                    coTankUnits[count] = member
                 end
             end
+        end
+    end
+    for index = count + 1, #coTankUnits do
+        coTankUnits[index] = nil
+    end
+    cachedRaidIndex = playerRaidIndex
+    coTankUnitsDirty = sawSecret
+    return coTankUnits
+end
+
+local function IsCoTankHoldingAggro(unit, playerRaidIndex)
+    for _, member in ipairs(GetCoTankUnits(playerRaidIndex)) do
+        local status = UnitThreatSituation(member, unit)
+        if not issecretvalue(status) and (status == 2 or status == 3) then
+            return true
         end
     end
     return false
@@ -50,13 +78,14 @@ end
 local function GetThreatColor(frame)
     -- Reject restricted (secret) values before inspecting them or branching on them.
     -- Unusable threat data leaves Blizzard's native color visible.
-    local unit = frame.displayedUnit
-    if issecretvalue(unit) or type(unit) ~= "string" or not unit:match("^nameplate%d+$") then
+    -- Check the nameplate-only flag first so party/raid frames exit without pattern matching.
+    local enabled = frame.displayThreatHealthBarColor
+    if issecretvalue(enabled) or not enabled then
         return
     end
 
-    local enabled = frame.displayThreatHealthBarColor
-    if issecretvalue(enabled) or not enabled then
+    local unit = frame.displayedUnit
+    if issecretvalue(unit) or type(unit) ~= "string" or not unit:match("^nameplate%d+$") then
         return
     end
 
@@ -68,6 +97,12 @@ local function GetThreatColor(frame)
 
     local enemy = UnitCanAttack("player", unit)
     if issecretvalue(enemy) or not enemy then
+        return
+    end
+
+    -- Enemy players do not have threat tables; skip group and co-tank threat scans in PvP.
+    local isPlayer = UnitIsPlayer(unit)
+    if issecretvalue(isPlayer) or isPlayer then
         return
     end
 
@@ -87,8 +122,18 @@ local function GetThreatColor(frame)
     end
 
     -- The co-tank color follows actual aggro, independent of the player's threat lead.
-    if isTank and coTankColor and raidIndex and IsCoTankHoldingAggro(unit, raidIndex) then
-        return coTankColor
+    local playerStatus
+    local hasPlayerStatus = false
+    if isTank and coTankColor and raidIndex then
+        playerStatus = UnitThreatSituation("player", unit)
+        hasPlayerStatus = true
+        if
+            not issecretvalue(playerStatus)
+            and (playerStatus == nil or playerStatus == 0 or playerStatus == 1)
+            and IsCoTankHoldingAggro(unit, raidIndex)
+        then
+            return coTankColor
+        end
     end
 
     local palette = (isTank and separateColors) and tankColors or nonTankColors
@@ -115,6 +160,12 @@ local function GetThreatColor(frame)
             return
         end
         if raidIndex then
+            for _, member in ipairs(GetCoTankUnits(raidIndex)) do
+                local tankStatus = UnitThreatSituation(member, unit)
+                if not issecretvalue(tankStatus) and palette[tankStatus] then
+                    return palette[0]
+                end
+            end
             for index = 1, GetNumGroupMembers() do
                 local member = raidUnits[index]
                 if index ~= raidIndex and member then
@@ -137,8 +188,10 @@ local function GetThreatColor(frame)
     -- Confirm actual aggro before showing a tank's safe color. States 1/2 remain
     -- threat-lead warnings and do not guarantee the tank is being attacked.
     if status == 0 and isTank then
-        local tankingStatus = UnitThreatSituation("player", unit)
-        if issecretvalue(tankingStatus) or (tankingStatus ~= 2 and tankingStatus ~= 3) then
+        if not hasPlayerStatus then
+            playerStatus = UnitThreatSituation("player", unit)
+        end
+        if issecretvalue(playerStatus) or (playerStatus ~= 2 and playerStatus ~= 3) then
             return
         end
     end
@@ -214,7 +267,7 @@ local function UpdateThreatColor(frame)
 end
 
 local function RefreshOverlays()
-    for _, nameplate in pairs(C_NamePlate.GetNamePlates()) do
+    for _, nameplate in ipairs(C_NamePlate.GetNamePlates()) do
         if not nameplate:IsForbidden() and nameplate.UnitFrame then
             UpdateThreatColor(nameplate.UnitFrame)
         end
@@ -226,6 +279,7 @@ hooksecurefunc("CompactUnitFrame_UpdateHealthColor", UpdateThreatColor)
 
 local function OnRoleOrRosterEvent(_, event)
     if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ROLES_ASSIGNED" then
+        coTankUnitsDirty = true
         if lockedRole == nil then
             lastEffectiveTank = PlayerUtil.IsPlayerEffectivelyTank() and true or false
         end

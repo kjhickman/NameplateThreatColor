@@ -190,6 +190,7 @@ end
 function UnitGroupRolesAssigned(unit)
     local index = assert(tonumber(unit:match("^raid(%d+)$")))
     assert(index ~= state.raidIndex, "The player is not a co-tank")
+    state.roleChecks = state.roleChecks + 1
     return state.raidRoles[index]
 end
 
@@ -203,6 +204,11 @@ end
 function UnitCanAttack(player, unit)
     assert(player == "player" and state.nameplates[unit])
     return state.enemy
+end
+
+function UnitIsPlayer(unit)
+    assert(state.nameplates[unit])
+    return state.isPlayer
 end
 
 function UnitAffectingCombat(unit)
@@ -223,6 +229,7 @@ end
 function UnitThreatSituation(player, unit)
     assert(state.nameplates[unit])
     if player ~= "player" then
+        state.unitThreatChecks = state.unitThreatChecks + 1
         local threats
         if player:match("^raid%d+$") then
             threats = state.raidThreat[unit]
@@ -232,6 +239,7 @@ function UnitThreatSituation(player, unit)
         end
         return threats and threats[player]
     end
+    state.playerThreatChecks = state.playerThreatChecks + 1
     if state.unitThreat[unit] ~= nil then
         return state.unitThreat[unit]
     end
@@ -469,9 +477,10 @@ end
 function helpers.test(name, run)
     state.textures, state.nameplates, state.unitThreat = {}, {}, {}
     state.unitThreatLead, state.leadStatus = {}, 3
-    state.party, state.enemy, state.tank, state.status = true, true, false, 3
+    state.party, state.enemy, state.isPlayer, state.tank, state.status = true, true, false, false, 3
     state.combat, state.partyMembers, state.partyThreat = false, 4, {}
     state.raidIndex, state.raidRoles, state.raidMainTanks, state.raidThreat = nil, {}, {}, {}
+    state.roleChecks, state.playerThreatChecks, state.unitThreatChecks = 0, 0, 0
     state.secret, state.secretChecked = {}, false
     state.healthBarColorCVar, state.variablesLoaded = true, true
     helpers.reloadAddon()

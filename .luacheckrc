@@ -22,6 +22,7 @@ read_globals = {
     "UnitGroupRolesAssigned",
     "UnitInParty",
     "UnitInRaid",
+    "UnitIsPlayer",
     "UnitThreatLeadSituation",
     "UnitThreatSituation",
 }
