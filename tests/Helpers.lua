@@ -193,6 +193,13 @@ function UnitGroupRolesAssigned(unit)
     return state.raidRoles[index]
 end
 
+function GetPartyAssignment(assignment, unit)
+    assert(assignment == "MAINTANK")
+    local index = assert(tonumber(unit:match("^raid(%d+)$")))
+    assert(index ~= state.raidIndex, "The player is not a co-tank")
+    return state.raidMainTanks[index] or false
+end
+
 function UnitCanAttack(player, unit)
     assert(player == "player" and state.nameplates[unit])
     return state.enemy
@@ -293,8 +300,16 @@ function CreateFrame(kind, name, parent, template)
         end
         function frame:RegisterEvent(event)
             assert(not state.events[event])
-            state.events[event] = function()
-                self.scripts.OnEvent(self, event)
+            state.events[event] = function(...)
+                self.scripts.OnEvent(self, event, ...)
+            end
+        end
+        function frame:RegisterUnitEvent(event, unit)
+            assert(not state.events[event])
+            assert(unit == "player")
+            state.events[event] = function(eventUnit)
+                assert(eventUnit == nil or eventUnit == unit)
+                self.scripts.OnEvent(self, event, eventUnit or unit)
             end
         end
         function frame:Click()
@@ -332,8 +347,8 @@ function CreateFrame(kind, name, parent, template)
         assert(relativeTo == parent, "Overlay bar must cover the full native bar")
         self.anchor = relativeTo
     end
-    function bar:SetFrameLevel(level)
-        self.level = level
+    function bar:SetUsingParentLevel(usingParentLevel)
+        self.usingParentLevel = usingParentLevel
     end
     function bar:SetStatusBarTexture(texture)
         assert(texture.owner == self, "Native textures must not be reparented")
@@ -405,11 +420,17 @@ function helpers.newFrame(unit)
         end
         function texture:SetAtlas(atlas)
             assertCurrentTest()
-            self.atlas, self.file = atlas, nil
+            self.atlas, self.file, self.texCoord = atlas, nil, nil
+            self.atlasCalls = (self.atlasCalls or 0) + 1
         end
         function texture:SetTexture(file)
             assertCurrentTest()
             self.file, self.atlas = file, nil
+            self.textureCalls = (self.textureCalls or 0) + 1
+        end
+        function texture:SetTexCoord(left, right, top, bottom)
+            assertCurrentTest()
+            self.texCoord = { left, right, top, bottom }
         end
         function texture:SetVertexColor(r, g, b)
             assertCurrentTest()
@@ -450,7 +471,7 @@ function helpers.test(name, run)
     state.unitThreatLead, state.leadStatus = {}, 3
     state.party, state.enemy, state.tank, state.status = true, true, false, 3
     state.combat, state.partyMembers, state.partyThreat = false, 4, {}
-    state.raidIndex, state.raidRoles, state.raidThreat = nil, {}, {}
+    state.raidIndex, state.raidRoles, state.raidMainTanks, state.raidThreat = nil, {}, {}, {}
     state.secret, state.secretChecked = {}, false
     state.healthBarColorCVar, state.variablesLoaded = true, true
     helpers.reloadAddon()

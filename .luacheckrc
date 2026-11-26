@@ -10,6 +10,7 @@ read_globals = {
     "EventUtil",
     "GetNumGroupMembers",
     "GetNumSubgroupMembers",
+    "GetPartyAssignment",
     "hooksecurefunc",
     "issecretvalue",
     "MAX_RAID_MEMBERS",

@@ -15,7 +15,7 @@ test("custom threat colors draw above Blizzard's health-bar fill", function()
     local layer, sublevel = frame.healthBar:GetStatusBarTexture():GetDrawLayer()
     local texture = state.textures[1]
     assert(texture.layer == layer and texture.sublevel > sublevel)
-    assert(texture.owner.level == frame.healthBar:GetFrameLevel())
+    assert(texture.owner.usingParentLevel == true)
 end)
 
 test("the overlay tints Blizzard's own atlas", function()
@@ -34,6 +34,36 @@ test("classic-style overlays reuse Blizzard's texture file", function()
     state.update(frame)
     local texture = state.textures[1]
     assert(texture.file == fill:GetTexture() and texture.atlas == nil)
+    assertColor(texture, 1, 0, 0)
+end)
+
+test("switching nameplate style live updates the cached overlay texture", function()
+    local frame = newFrame()
+    local fill = frame.healthBar:GetStatusBarTexture()
+    state.update(frame)
+    local texture = state.textures[1]
+    assert(texture.atlas == "test-nameplate-bar" and texture.atlasCalls == 1)
+
+    state.update(frame)
+    assert(texture.atlasCalls == 1 and texture.textureCalls == nil)
+
+    fill.atlas = nil
+    state.update(frame)
+    assert(texture.file == 12345 and texture.atlas == nil and texture.textureCalls == 1)
+    assert(
+        texture.texCoord[1] == 0
+            and texture.texCoord[2] == 1
+            and texture.texCoord[3] == 0
+            and texture.texCoord[4] == 1
+    )
+
+    state.update(frame)
+    assert(texture.textureCalls == 1)
+
+    fill.atlas = "test-nameplate-bar"
+    state.update(frame)
+    assert(texture.atlas == "test-nameplate-bar" and texture.file == nil)
+    assert(texture.atlasCalls == 2)
     assertColor(texture, 1, 0, 0)
 end)
 
@@ -155,6 +185,18 @@ test("party threat on one mob does not color another mob green", function()
     assert(#state.textures == 1)
 end)
 
+test("a non-tank in a raid confirms engagement from any raid member", function()
+    state.party, state.partyMembers = false, 0
+    state.raidIndex = 6
+    state.raidRoles = { "TANK", "DAMAGER", "DAMAGER", "DAMAGER", "DAMAGER", "DAMAGER" }
+    state.status, state.combat = nil, true
+    state.raidThreat.nameplate1 = { raid1 = 3 }
+    state.update(newFrame("nameplate1"))
+    assertColor(state.textures[1], 0, 1, 0)
+    state.update(newFrame("nameplate2"))
+    assert(#state.textures == 1)
+end)
+
 test("a tank without threat-lead data does not get the no-threat color", function()
     state.tank, state.combat = true, true
     state.partyThreat.nameplate1 = { party1 = 3 }
@@ -261,6 +303,21 @@ test("the co-tank must be assigned Tank and holding aggro, not just on the threa
     assertColor(state.textures[1], 0x3b / 255, 0x82 / 255, 0xf6 / 255)
 end)
 
+test("a raid main tank assignment also qualifies as a co-tank", function()
+    state.party, state.tank, state.raidIndex, state.status = false, true, 1, 0
+    state.raidRoles = { "NONE", "NONE" }
+    state.raidMainTanks = { [2] = true }
+    state.raidThreat.nameplate1 = { raid2 = 3 }
+    local frame = newFrame()
+    state.update(frame)
+    assertColor(state.textures[1], 0x3b / 255, 0x82 / 255, 0xf6 / 255)
+
+    state.secretChecked, state.raidMainTanks[2] = false, state.secret
+    state.update(frame)
+    assert(state.secretChecked)
+    assertColor(state.textures[1], 1, 0, 0)
+end)
+
 test("secret raid, role or threat data does not confirm co-tank aggro", function()
     state.tank, state.raidIndex, state.status = true, 1, 0
     state.raidRoles = { "TANK", "TANK" }
@@ -297,6 +354,39 @@ test("raid role and roster changes refresh nameplates even without a threat upda
     state.raidIndex = nil
     state.events.GROUP_ROSTER_UPDATE()
     assert(not state.textures[1].shown)
+end)
+
+test("automatic role refreshes on stance, spec and player aura changes", function()
+    state.status, state.leadStatus = 2, 0
+    local frame = newFrame()
+    state.update(frame)
+    assertColor(state.textures[1], 1, 0.6, 0)
+
+    state.tank = true
+    state.events.UPDATE_SHAPESHIFT_FORM()
+    assertColor(state.textures[1], 0, 1, 0)
+
+    state.tank = false
+    state.events.ACTIVE_PLAYER_SPECIALIZATION_CHANGED()
+    assertColor(state.textures[1], 1, 0.6, 0)
+
+    state.tank = true
+    state.events.UNIT_AURA("player")
+    assertColor(state.textures[1], 0, 1, 0)
+
+    -- Unrelated player aura updates while role is unchanged do not refresh overlays.
+    state.leadStatus = 3
+    state.events.UNIT_AURA("player")
+    assertColor(state.textures[1], 0, 1, 0)
+
+    -- Locked roles ignore automatic stance/aura/spec transitions.
+    state.addon.ApplyRoleLock("nontank")
+    assertColor(state.textures[1], 1, 0.6, 0)
+    state.status = 3
+    state.tank = false
+    state.events.UPDATE_SHAPESHIFT_FORM()
+    state.events.UNIT_AURA("player")
+    assertColor(state.textures[1], 1, 0.6, 0)
 end)
 
 test("safe, transitioning, and dangerous states use the same palette for both roles", function()

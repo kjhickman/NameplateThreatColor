@@ -13,6 +13,16 @@ end
 
 -- nil follows the player's live role; true or false pins it to a locked choice.
 local lockedRole
+local lastEffectiveTank
+
+local function IsRaidTank(member)
+    local role = UnitGroupRolesAssigned(member)
+    if not issecretvalue(role) and role == "TANK" then
+        return true
+    end
+    local mainTank = GetPartyAssignment("MAINTANK", member)
+    return not issecretvalue(mainTank) and mainTank and true or false
+end
 
 local function IsCoTankHoldingAggro(unit, playerRaidIndex)
     local playerStatus = UnitThreatSituation("player", unit)
@@ -26,8 +36,7 @@ local function IsCoTankHoldingAggro(unit, playerRaidIndex)
     for index = 1, GetNumGroupMembers() do
         if index ~= playerRaidIndex then
             local member = raidUnits[index]
-            local role = UnitGroupRolesAssigned(member)
-            if not issecretvalue(role) and role == "TANK" then
+            if member and IsRaidTank(member) then
                 local status = UnitThreatSituation(member, unit)
                 if not issecretvalue(status) and (status == 2 or status == 3) then
                     return true
@@ -66,21 +75,19 @@ local function GetThreatColor(frame)
     -- specialization changes that would otherwise flip the live role mid-fight.
     local isTank = lockedRole
     if isTank == nil then
-        isTank = PlayerUtil.IsPlayerEffectivelyTank()
+        isTank = PlayerUtil.IsPlayerEffectivelyTank() and true or false
+        lastEffectiveTank = isTank
     end
-    local raidIndex
-    if isTank then
-        raidIndex = UnitInRaid("player")
-        if issecretvalue(raidIndex) then
-            raidIndex = nil
-        end
+    local raidIndex = UnitInRaid("player")
+    if issecretvalue(raidIndex) then
+        raidIndex = nil
     end
     if not raidIndex and not UnitInParty("player") then
         return
     end
 
     -- The co-tank color follows actual aggro, independent of the player's threat lead.
-    if coTankColor and raidIndex and IsCoTankHoldingAggro(unit, raidIndex) then
+    if isTank and coTankColor and raidIndex and IsCoTankHoldingAggro(unit, raidIndex) then
         return coTankColor
     end
 
@@ -100,17 +107,29 @@ local function GetThreatColor(frame)
         return
     end
 
-    -- A missing non-tank threat entry is safe only when known party threat confirms
+    -- A missing non-tank threat entry is safe only when known group threat confirms
     -- this engaged enemy is fighting our group, rather than someone else's.
     if status == nil and not isTank then
         local inCombat = UnitAffectingCombat(unit)
         if issecretvalue(inCombat) or not inCombat then
             return
         end
-        for index = 1, GetNumSubgroupMembers() do
-            local partyStatus = UnitThreatSituation(partyUnits[index], unit)
-            if not issecretvalue(partyStatus) and palette[partyStatus] then
-                return palette[0]
+        if raidIndex then
+            for index = 1, GetNumGroupMembers() do
+                local member = raidUnits[index]
+                if index ~= raidIndex and member then
+                    local raidStatus = UnitThreatSituation(member, unit)
+                    if not issecretvalue(raidStatus) and palette[raidStatus] then
+                        return palette[0]
+                    end
+                end
+            end
+        else
+            for index = 1, GetNumSubgroupMembers() do
+                local partyStatus = UnitThreatSituation(partyUnits[index], unit)
+                if not issecretvalue(partyStatus) and palette[partyStatus] then
+                    return palette[0]
+                end
             end
         end
     end
@@ -125,6 +144,26 @@ local function GetThreatColor(frame)
     end
 
     return palette[status]
+end
+
+local function SyncBarTexture(overlay, fill)
+    local atlas = fill:GetAtlas()
+    if atlas then
+        if overlay.atlas ~= atlas then
+            overlay.texture:SetAtlas(atlas)
+            overlay.atlas = atlas
+            overlay.file = nil
+        end
+        return
+    end
+
+    local file = fill:GetTexture()
+    if overlay.atlas or overlay.file ~= file then
+        overlay.texture:SetTexture(file)
+        overlay.texture:SetTexCoord(0, 1, 0, 1)
+        overlay.atlas = nil
+        overlay.file = file
+    end
 end
 
 local function UpdateThreatColor(frame)
@@ -145,22 +184,19 @@ local function UpdateThreatColor(frame)
     -- Use an addon-owned bar above the native fill instead of changing Blizzard's
     -- bar or textures. Reusing its art preserves the original shading and borders.
     local bar = frame.healthBar
+    local fill = bar:GetStatusBarTexture()
     if not overlay then
         local overlayBar = CreateFrame("StatusBar", nil, bar)
         overlayBar:SetAllPoints(bar)
-        overlayBar:SetFrameLevel(bar:GetFrameLevel())
-        local fill = bar:GetStatusBarTexture()
+        overlayBar:SetUsingParentLevel(true)
         local texture = overlayBar:CreateTexture(nil, "ARTWORK", nil, 1)
-        local atlas = fill:GetAtlas()
-        if atlas then
-            texture:SetAtlas(atlas)
-        else
-            texture:SetTexture(fill:GetTexture())
-        end
+        overlay = { bar = overlayBar, texture = texture }
+        SyncBarTexture(overlay, fill)
         texture:SetAllPoints(overlayBar)
         overlayBar:SetStatusBarTexture(texture)
-        overlay = { bar = overlayBar }
         overlays[frame] = overlay
+    else
+        SyncBarTexture(overlay, fill)
     end
     -- Forward native health values, including secret values, directly to the renderer
     -- without inspecting or calculating with them in Lua.
@@ -188,10 +224,32 @@ end
 -- Run after Blizzard's normal update without replacing its health-color logic.
 hooksecurefunc("CompactUnitFrame_UpdateHealthColor", UpdateThreatColor)
 
+local function OnRoleOrRosterEvent(_, event)
+    if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_ROLES_ASSIGNED" then
+        if lockedRole == nil then
+            lastEffectiveTank = PlayerUtil.IsPlayerEffectivelyTank() and true or false
+        end
+        RefreshOverlays()
+        return
+    end
+
+    if lockedRole ~= nil then
+        return
+    end
+    local isTank = PlayerUtil.IsPlayerEffectivelyTank() and true or false
+    if isTank ~= lastEffectiveTank then
+        lastEffectiveTank = isTank
+        RefreshOverlays()
+    end
+end
+
 local rosterEvents = CreateFrame("Frame")
 rosterEvents:RegisterEvent("GROUP_ROSTER_UPDATE")
 rosterEvents:RegisterEvent("PLAYER_ROLES_ASSIGNED")
-rosterEvents:SetScript("OnEvent", RefreshOverlays)
+rosterEvents:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+rosterEvents:RegisterEvent("ACTIVE_PLAYER_SPECIALIZATION_CHANGED")
+rosterEvents:RegisterUnitEvent("UNIT_AURA", "player")
+rosterEvents:SetScript("OnEvent", OnRoleOrRosterEvent)
 
 function addon.ApplyRoleLock(role)
     if role == "tank" then
@@ -200,6 +258,7 @@ function addon.ApplyRoleLock(role)
         lockedRole = false
     else
         lockedRole = nil
+        lastEffectiveTank = PlayerUtil.IsPlayerEffectivelyTank() and true or false
     end
 
     RefreshOverlays()
