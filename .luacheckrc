@@ -16,6 +16,7 @@ read_globals = {
     "MAX_RAID_MEMBERS",
     "PlayerUtil",
     "Settings",
+    "SETTINGS_DEFAULTS",
     "UIParent",
     "UnitAffectingCombat",
     "UnitCanAttack",

@@ -20,6 +20,7 @@ EventUtil = {
 
 Enum = { NamePlateThreatDisplay = { HealthBarColor = 3 } }
 MAX_RAID_MEMBERS = 40
+SETTINGS_DEFAULTS = "Defaults"
 UIParent = {
     IsShown = function()
         return true
@@ -38,6 +39,9 @@ C_CVar = {
             name == "nameplateThreatDisplay" and index == Enum.NamePlateThreatDisplay.HealthBarColor
         )
         assert(type(value) == "boolean")
+        if state.setCVarFails then
+            return false
+        end
         state.healthBarColorCVar = value
         return true
     end,
@@ -95,6 +99,12 @@ function Settings.RegisterProxySetting(owner, variable, kind, label, default, ge
     end
     function setting:SetValue(value)
         setValue(value)
+    end
+    function setting:SetValueToDefault()
+        if self:GetValue() ~= self.default then
+            self:SetValue(self.default)
+        end
+        return true
     end
     state.settings[variable] = setting
     return setting
@@ -264,8 +274,9 @@ function CreateFrame(kind, name, parent, template)
             template = template,
             shown = true,
             children = {},
+            points = {},
             scripts = {},
-            SetPoint = noop,
+            textures = {},
             SetWidth = noop,
             SetHeight = noop,
             SetSize = noop,
@@ -276,6 +287,15 @@ function CreateFrame(kind, name, parent, template)
         }
         if parent and parent.children then
             table.insert(parent.children, frame)
+        end
+        function frame:ClearAllPoints()
+            self.points = {}
+        end
+        function frame:SetPoint(...)
+            table.insert(self.points, { ... })
+        end
+        function frame:SetHitRectInsets(left, right, top, bottom)
+            self.hitRectInsets = { left, right, top, bottom }
         end
         function frame:SetShown(shown)
             self.shown = shown
@@ -299,6 +319,16 @@ function CreateFrame(kind, name, parent, template)
             end
             frame.fontString = text
             return text
+        end
+        function frame:CreateTexture()
+            local texture = {
+                SetPoint = noop,
+            }
+            function texture:SetAtlas(atlas, useAtlasSize)
+                self.atlas, self.useAtlasSize = atlas, useAtlasSize
+            end
+            table.insert(frame.textures, texture)
+            return texture
         end
         function frame:SetText(value)
             self.text = value
@@ -326,8 +356,8 @@ function CreateFrame(kind, name, parent, template)
         if kind == "CheckButton" then
             frame.checked = false
             frame.Text = {
-                GetStringWidth = function()
-                    return 0
+                GetStringWidth = function(self)
+                    return #(self.text or "") * 6
                 end,
                 SetText = function(self, value)
                     self.text = value
@@ -482,7 +512,7 @@ function helpers.test(name, run)
     state.raidIndex, state.raidRoles, state.raidMainTanks, state.raidThreat = nil, {}, {}, {}
     state.roleChecks, state.playerThreatChecks, state.unitThreatChecks = 0, 0, 0
     state.secret, state.secretChecked = {}, false
-    state.healthBarColorCVar, state.variablesLoaded = true, true
+    state.healthBarColorCVar, state.setCVarFails, state.variablesLoaded = true, false, true
     helpers.reloadAddon()
     run()
     helpers.tests = helpers.tests + 1

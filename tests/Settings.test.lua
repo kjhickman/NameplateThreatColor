@@ -4,13 +4,26 @@ local test = helpers.test
 local newFrame = helpers.newFrame
 local assertColor = helpers.assertColor
 
-local function promptControl(label)
-    for _, child in ipairs(state.prompt.children) do
+local function findChild(parent, label)
+    for _, child in ipairs(parent.children) do
         if child.text == label or (child.Text and child.Text.text == label) then
             return child
         end
     end
-    error("Prompt has no control labeled " .. label, 2)
+    error("Frame has no child labeled " .. label, 2)
+end
+
+local function promptControl(label)
+    return findChild(state.prompt, label)
+end
+
+local function topOffset(frame)
+    for _, point in ipairs(frame.points) do
+        if point[1] == "TOPLEFT" then
+            return point[5]
+        end
+    end
+    error("Frame has no TOPLEFT anchor", 2)
 end
 
 test("canvas settings expose shared and co-tank color swatches with persisted defaults", function()
@@ -660,3 +673,74 @@ test("non-boolean saved prompt suppression flags fall back to showing", function
         assert(state.prompt and state.prompt:IsShown())
     end
 end)
+
+test("hiding the co-tank swatch collapses the vertical gap below it", function()
+    local toggle = state.settings.NameplateThreatColor_showCoTankColor
+    local coTank = state.settings.NameplateThreatColor_coTankAggroColor.control
+    local separate = state.settings.NameplateThreatColor_separateTankColors.control
+    local tankSection = state.settings.NameplateThreatColor_tankSecureAggroColor.control.parent
+
+    local coTankY = topOffset(coTank)
+    local shownSeparateY = topOffset(separate)
+    local shownTankSectionY = topOffset(tankSection)
+    assert(shownSeparateY < coTankY and shownTankSectionY < shownSeparateY)
+
+    toggle:SetValue(false)
+    assert(topOffset(separate) == coTankY)
+    assert(topOffset(tankSection) == shownSeparateY)
+
+    toggle:SetValue(true)
+    assert(topOffset(separate) == shownSeparateY)
+    assert(topOffset(tankSection) == shownTankSectionY)
+end)
+
+test("the canvas header provides a Defaults button that resets all settings", function()
+    local panel = state.category.frame
+    assert(panel.fontString.text == "NameplateThreatColor")
+    assert(panel.textures[1].atlas == "Options_HorizontalDivider")
+
+    local defaultsButton = findChild(panel, SETTINGS_DEFAULTS)
+    state.settings.NameplateThreatColor_highThreatColor:SetValue("ff0000ff")
+    state.settings.NameplateThreatColor_showCoTankColor:SetValue(false)
+    state.settings.NameplateThreatColor_separateTankColors:SetValue(true)
+    state.settings.NameplateThreatColor_tankHighThreatColor:SetValue("ff00ffff")
+    state.settings.NameplateThreatColor_roleLock:SetValue("tank")
+
+    local frame = newFrame()
+    state.update(frame)
+    assertColor(state.textures[1], 0, 1, 1)
+
+    defaultsButton:Click()
+    assert(NameplateThreatColorDB.highThreatColor == "ffff0000")
+    assert(NameplateThreatColorDB.showCoTankColor == true)
+    assert(NameplateThreatColorDB.separateTankColors == false)
+    assert(NameplateThreatColorDB.tankHighThreatColor == "ffff0000")
+    assert(NameplateThreatColorCharDB.roleLock == "auto")
+    assert(state.settings.NameplateThreatColor_coTankAggroColor.control:IsShown())
+    assert(not state.settings.NameplateThreatColor_tankSecureAggroColor.control:IsShown())
+    assertColor(state.textures[1], 1, 0, 0)
+end)
+
+test(
+    "the prompt checkbox hit rect covers its label and failed CVar writes keep the prompt open",
+    function()
+        state.healthBarColorCVar, state.setCVarFails = false, true
+        helpers.reloadAddon()
+
+        local dontShow = promptControl("Don't show this again")
+        local width = dontShow.Text:GetStringWidth()
+        assert(width > 0 and dontShow.hitRectInsets[2] == -width)
+
+        dontShow:SetChecked(true)
+        promptControl("Enable"):Click()
+        assert(state.healthBarColorCVar == false)
+        assert(state.prompt:IsShown())
+        assert(NameplateThreatColorDB.hideHealthBarColorPrompt == false)
+
+        state.setCVarFails = false
+        promptControl("Enable"):Click()
+        assert(state.healthBarColorCVar == true)
+        assert(not state.prompt:IsShown())
+        assert(NameplateThreatColorDB.hideHealthBarColorPrompt == true)
+    end
+)
