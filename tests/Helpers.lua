@@ -73,38 +73,45 @@ function Settings.CreateElementInitializer(template, data)
     end
     function initializer:InitFrame(frame)
         assert(frame:GetElementData() == self)
-        frame.initializer = self
         local setting = self.data.setting
-        if setting then
-            setting.control = frame
-            setting.tooltip = self.data.tooltip
-            setting.swatch = self.template == "SettingsColorSwatchControlTemplate"
-            setting.checkbox = self.template == "SettingsCheckboxControlTemplate"
-            if self.data.options then
-                setting.options = self.data.options()
-            end
+        setting.control = frame
+        setting.tooltip = self.data.tooltip
+        setting.swatch = self.template == "SettingsColorSwatchControlTemplate"
+        setting.checkbox = self.template == "SettingsCheckboxControlTemplate"
+        if self.data.options then
+            setting.options = self.data.options()
         end
     end
     return initializer
 end
 
-function Settings.RegisterProxySetting(owner, variable, kind, label, default, getValue, setValue)
+function Settings.RegisterAddOnSetting(owner, variable, key, tbl, kind, label, default)
     assert(owner == state.category)
+    assert(type(tbl) == "table")
     assert(kind == Settings.VarType.String or kind == Settings.VarType.Boolean)
     assert(type(default) == kind, "Default value does not match the declared variable type")
     assert(not state.settings[variable], "Setting registered twice")
+    if tbl[key] == nil then
+        tbl[key] = default
+    end
     local setting = { label = label, default = default }
+    local callbacks = {}
     function setting:GetValue()
-        return getValue()
+        return tbl[key]
     end
     function setting:SetValue(value)
-        setValue(value)
+        assert(type(value) == kind)
+        tbl[key] = value
+        for _, callback in ipairs(callbacks) do
+            callback(self, value)
+        end
     end
     function setting:SetValueToDefault()
-        if self:GetValue() ~= self.default then
-            self:SetValue(self.default)
-        end
+        self:SetValue(self.default)
         return true
+    end
+    function setting:SetValueChangedCallback(callback)
+        callbacks[#callbacks + 1] = callback
     end
     state.settings[variable] = setting
     return setting
@@ -266,14 +273,14 @@ end
 
 local function noop() end
 
-function CreateFrame(kind, name, parent, template)
+function CreateFrame(kind, name, parent)
     if kind == "Frame" or kind == "Button" or kind == "CheckButton" then
         assert(name == nil)
         local frame = {
             parent = parent,
-            template = template,
             shown = true,
             children = {},
+            fontStrings = {},
             points = {},
             scripts = {},
             textures = {},
@@ -310,6 +317,7 @@ function CreateFrame(kind, name, parent, template)
             local text = {
                 SetPoint = noop,
                 SetWidth = noop,
+                SetJustifyH = noop,
                 GetStringHeight = function()
                     return 0
                 end,
@@ -317,15 +325,15 @@ function CreateFrame(kind, name, parent, template)
             function text:SetText(value)
                 self.text = value
             end
-            frame.fontString = text
+            table.insert(frame.fontStrings, text)
             return text
         end
         function frame:CreateTexture()
             local texture = {
                 SetPoint = noop,
             }
-            function texture:SetAtlas(atlas, useAtlasSize)
-                self.atlas, self.useAtlasSize = atlas, useAtlasSize
+            function texture:SetAtlas(atlas)
+                self.atlas = atlas
             end
             table.insert(frame.textures, texture)
             return texture
@@ -370,13 +378,9 @@ function CreateFrame(kind, name, parent, template)
                 return self.checked
             end
         end
-        if template == "SettingsListSectionHeaderTemplate" then
-            frame.Title = { SetFontObject = noop, SetPoint = noop }
-        end
         if parent == UIParent then
             state.prompt = frame
         end
-        table.insert(state.uiFrames, frame)
         return frame
     end
     assert(kind == "StatusBar" and name == nil and parent)
@@ -432,9 +436,6 @@ function helpers.newFrame(unit)
     }
     function bar:GetStatusBarTexture()
         return fill
-    end
-    function bar:GetFrameLevel()
-        return 5
     end
     function bar:GetMinMaxValues()
         return self.minimum, self.maximum
@@ -525,19 +526,14 @@ function helpers.assertColor(texture, r, g, b)
     assert(color[1] == r and color[2] == g and color[3] == b, "Unexpected overlay color")
 end
 
-local function loadAddon()
-    local addon = {}
-    assert(loadfile("Nameplates.lua"))("NameplateThreatColor", addon)
-    assert(loadfile("Settings.lua"))("NameplateThreatColor", addon)
-    return addon
-end
-
 function helpers.reloadAddon(saved, charSaved)
     NameplateThreatColorDB, NameplateThreatColorCharDB = saved, charSaved
     state.update, state.initialize, state.category, state.registeredCategory = nil, nil, nil, nil
     state.onVariablesLoaded, state.prompt = nil, nil
-    state.settings, state.uiFrames, state.events = {}, {}, {}
-    state.addon = loadAddon()
+    state.settings, state.events = {}, {}
+    state.addon = {}
+    assert(loadfile("Nameplates.lua"))("NameplateThreatColor", state.addon)
+    assert(loadfile("Settings.lua"))("NameplateThreatColor", state.addon)
     assert(state.update, "Health-color post-hook was not installed")
     assert(
         state.initialize,

@@ -17,42 +17,11 @@ local defaultSeparateTankColors = false
 local defaultRoleLock = "auto"
 local threatDisplayCVar = "nameplateThreatDisplay"
 local rowHeight = 34
-local roleLockOptions = {
-    { "auto", "Automatic" },
-    { "tank", "Tank" },
-    { "nontank", "Non-tank" },
-}
-
-local function IsKnownRoleLock(value)
-    for _, option in ipairs(roleLockOptions) do
-        if option[1] == value then
-            return true
-        end
-    end
-    return false
-end
 
 local function SetRowOffset(frame, parent, offset)
     frame:ClearAllPoints()
     frame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -offset)
     frame:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, -offset)
-end
-
-local function AddHeader(panel, onDefaults)
-    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightHuge")
-    title:SetPoint("TOPLEFT", panel, "TOPLEFT", 7, -22)
-    title:SetText("NameplateThreatColor")
-
-    local divider = panel:CreateTexture(nil, "ARTWORK")
-    divider:SetAtlas("Options_HorizontalDivider", true)
-    divider:SetPoint("TOP", panel, "TOP", 0, -50)
-
-    local defaultsButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    defaultsButton:SetSize(96, 22)
-    defaultsButton:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -36, -16)
-    defaultsButton:SetText(SETTINGS_DEFAULTS)
-    defaultsButton:SetScript("OnClick", onDefaults)
-    return defaultsButton
 end
 
 -- These frames belong only to this canvas, never to Blizzard's shared settings
@@ -71,103 +40,17 @@ local function AddControl(parent, initializer, offset)
     return control
 end
 
-local function RegisterSetting(settingsList, category, key, varType, label, default, get, set)
-    local setting = Settings.RegisterProxySetting(
-        category,
-        "NameplateThreatColor_" .. key,
-        varType,
-        label,
-        default,
-        get,
-        set
-    )
-    settingsList[#settingsList + 1] = setting
-    return setting
-end
-
-local function RegisterColorSetting(settingsList, category, parent, offset, key, label, tooltip)
-    local setting = RegisterSetting(
-        settingsList,
-        category,
-        key,
-        Settings.VarType.String,
-        label,
-        defaults[key],
-        function()
-            return NameplateThreatColorDB[key]
-        end,
-        function(value)
-            NameplateThreatColorDB[key] = value
-            addon.ApplyColors(NameplateThreatColorDB)
-        end
-    )
-    return AddControl(parent, Settings.CreateColorSwatchInitializer(setting, nil, tooltip), offset)
-end
-
-local function RegisterColorToggle(
-    settingsList,
-    category,
-    panel,
-    offset,
-    key,
-    label,
-    default,
-    tooltip
-)
-    local setting = RegisterSetting(
-        settingsList,
-        category,
-        key,
-        Settings.VarType.Boolean,
-        label,
-        default,
-        function()
-            return NameplateThreatColorDB[key]
-        end,
-        function(value)
-            NameplateThreatColorDB[key] = value
-            addon.ApplyColors(NameplateThreatColorDB)
-            panel:OnRefresh()
-        end
-    )
-    return AddControl(panel, Settings.CreateCheckboxInitializer(setting, nil, tooltip), offset)
-end
-
-local function RegisterRoleLockSetting(settingsList, category, panel, offset)
-    local setting = RegisterSetting(
-        settingsList,
-        category,
-        "roleLock",
-        Settings.VarType.String,
-        "Role",
-        defaultRoleLock,
-        function()
-            return NameplateThreatColorCharDB.roleLock
-        end,
-        function(value)
-            NameplateThreatColorCharDB.roleLock = value
-            addon.ApplyRoleLock(value)
-        end
-    )
-    local function GetOptions()
-        local container = Settings.CreateControlTextContainer()
-        for _, option in ipairs(roleLockOptions) do
-            container:Add(option[1], option[2])
-        end
-        return container:GetData()
+local function CheckHealthBarColorSetting()
+    if NameplateThreatColorDB.hideHealthBarColorPrompt then
+        return
     end
-    return AddControl(
-        panel,
-        Settings.CreateDropdownInitializer(
-            setting,
-            GetOptions,
-            "Which threat states the colors describe. Automatic follows your current role, while Tank or Non-tank keeps the same colors through stance, form and specialization changes."
-        ),
-        offset
-    )
-end
+    if
+        C_CVar.GetCVarBitfield(threatDisplayCVar, Enum.NamePlateThreatDisplay.HealthBarColor)
+        ~= false
+    then
+        return
+    end
 
-local function ShowHealthBarColorPrompt()
     local prompt = CreateFrame("Frame", nil, UIParent)
     prompt:SetWidth(360)
     prompt:SetPoint("TOP", UIParent, "TOP", 0, -135)
@@ -223,17 +106,6 @@ local function ShowHealthBarColorPrompt()
     prompt:SetHeight(text:GetStringHeight() + 95)
 end
 
-local function CheckHealthBarColorSetting()
-    if NameplateThreatColorDB.hideHealthBarColorPrompt then
-        return
-    end
-    local enabled =
-        C_CVar.GetCVarBitfield(threatDisplayCVar, Enum.NamePlateThreatDisplay.HealthBarColor)
-    if enabled == false then
-        ShowHealthBarColorPrompt()
-    end
-end
-
 EventUtil.ContinueOnAddOnLoaded(addonName, function()
     if type(NameplateThreatColorDB) ~= "table" then
         NameplateThreatColorDB = {}
@@ -258,7 +130,8 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
     if type(NameplateThreatColorCharDB) ~= "table" then
         NameplateThreatColorCharDB = {}
     end
-    if not IsKnownRoleLock(NameplateThreatColorCharDB.roleLock) then
+    local roleLock = NameplateThreatColorCharDB.roleLock
+    if roleLock ~= "tank" and roleLock ~= "nontank" then
         NameplateThreatColorCharDB.roleLock = defaultRoleLock
     end
 
@@ -270,22 +143,86 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
     local category = Settings.RegisterCanvasLayoutCategory(panel, "NameplateThreatColor")
     local registeredSettings = {}
 
-    AddHeader(panel, function()
+    local function RegisterSetting(key, db, varType, label, default, onChange)
+        local setting = Settings.RegisterAddOnSetting(
+            category,
+            "NameplateThreatColor_" .. key,
+            key,
+            db,
+            varType,
+            label,
+            default
+        )
+        setting:SetValueChangedCallback(onChange)
+        registeredSettings[#registeredSettings + 1] = setting
+        return setting
+    end
+
+    local function ApplyColors()
+        addon.ApplyColors(NameplateThreatColorDB)
+    end
+
+    local function RegisterColorSetting(parent, rowOffset, key, label, tooltip)
+        local setting = RegisterSetting(
+            key,
+            NameplateThreatColorDB,
+            Settings.VarType.String,
+            label,
+            defaults[key],
+            ApplyColors
+        )
+        return AddControl(
+            parent,
+            Settings.CreateColorSwatchInitializer(setting, nil, tooltip),
+            rowOffset
+        )
+    end
+
+    local function RegisterColorToggle(rowOffset, key, label, default, tooltip)
+        local setting = RegisterSetting(
+            key,
+            NameplateThreatColorDB,
+            Settings.VarType.Boolean,
+            label,
+            default,
+            function()
+                ApplyColors()
+                panel:OnRefresh()
+            end
+        )
+        return AddControl(
+            panel,
+            Settings.CreateCheckboxInitializer(setting, nil, tooltip),
+            rowOffset
+        )
+    end
+
+    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightHuge")
+    title:SetPoint("TOPLEFT", panel, "TOPLEFT", 7, -22)
+    title:SetText("NameplateThreatColor")
+
+    local divider = panel:CreateTexture(nil, "ARTWORK")
+    divider:SetAtlas("Options_HorizontalDivider", true)
+    divider:SetPoint("TOP", panel, "TOP", 0, -50)
+
+    local defaultsButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    defaultsButton:SetSize(96, 22)
+    defaultsButton:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -36, -16)
+    defaultsButton:SetText(SETTINGS_DEFAULTS)
+    defaultsButton:SetScript("OnClick", function()
         for _, setting in ipairs(registeredSettings) do
             setting:SetValueToDefault()
         end
         panel:OnRefresh()
     end)
 
-    local note = AddControl(
-        panel,
-        Settings.CreateElementInitializer("SettingsListSectionHeaderTemplate", {
-            name = "Requires a party or raid and Nameplates > Aggro Display > Health Bar Color enabled.",
-        }),
-        50
+    local note = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    note:SetJustifyH("LEFT")
+    note:SetPoint("TOPLEFT", panel, "TOPLEFT", 7, -66)
+    note:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -8, -66)
+    note:SetText(
+        "Requires a party or raid and Nameplates > Aggro Display > Health Bar Color enabled."
     )
-    note.Title:SetFontObject("GameFontHighlightSmall")
-    note.Title:SetPoint("TOPRIGHT", note, "TOPRIGHT", -8, -16)
 
     local offset = 106
     local function NextOffset()
@@ -294,7 +231,31 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
         return current
     end
 
-    RegisterRoleLockSetting(registeredSettings, category, panel, NextOffset())
+    local roleLockSetting = RegisterSetting(
+        "roleLock",
+        NameplateThreatColorCharDB,
+        Settings.VarType.String,
+        "Role",
+        defaultRoleLock,
+        function(_, value)
+            addon.ApplyRoleLock(value)
+        end
+    )
+    AddControl(
+        panel,
+        Settings.CreateDropdownInitializer(
+            roleLockSetting,
+            function()
+                local container = Settings.CreateControlTextContainer()
+                container:Add("auto", "Automatic")
+                container:Add("tank", "Tank")
+                container:Add("nontank", "Non-tank")
+                return container:GetData()
+            end,
+            "Which threat states the colors describe. Automatic follows your current role, while Tank or Non-tank keeps the same colors through stance, form and specialization changes."
+        ),
+        NextOffset()
+    )
     for _, spec in ipairs({
         {
             "secureAggroColor",
@@ -317,20 +278,9 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
             "For tanks: lost or unsafe aggro. For non-tanks: holding aggro.",
         },
     }) do
-        RegisterColorSetting(
-            registeredSettings,
-            category,
-            panel,
-            NextOffset(),
-            spec[1],
-            spec[2],
-            spec[3]
-        )
+        RegisterColorSetting(panel, NextOffset(), spec[1], spec[2], spec[3])
     end
     RegisterColorToggle(
-        registeredSettings,
-        category,
-        panel,
         NextOffset(),
         "showCoTankColor",
         "Show co-tank aggro color",
@@ -339,8 +289,6 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
     )
     local coTankOffset = NextOffset()
     local coTankSwatch = RegisterColorSetting(
-        registeredSettings,
-        category,
         panel,
         coTankOffset,
         "coTankAggroColor",
@@ -348,9 +296,6 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
         "While tanking in a raid, marks an enemy when another raid tank (Tank role or Main Tank) is holding aggro and you are not."
     )
     local separateTankToggle = RegisterColorToggle(
-        registeredSettings,
-        category,
-        panel,
         NextOffset(),
         "separateTankColors",
         "Separate tank colors",
@@ -383,15 +328,7 @@ EventUtil.ContinueOnAddOnLoaded(addonName, function()
             "For tanks: lost or unsafe aggro.",
         },
     }) do
-        RegisterColorSetting(
-            registeredSettings,
-            category,
-            tankSection,
-            tankOffset,
-            spec[1],
-            spec[2],
-            spec[3]
-        )
+        RegisterColorSetting(tankSection, tankOffset, spec[1], spec[2], spec[3])
         tankOffset = tankOffset + rowHeight
     end
 

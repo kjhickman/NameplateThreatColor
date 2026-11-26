@@ -478,10 +478,7 @@ test("safe, transitioning, and dangerous states use the same palette for both ro
             state.status = role and 3 or expected[1]
             state.leadStatus = expected[1]
             state.update(frame)
-            local texture = state.textures[#state.textures]
-            local color = texture.color
-            assert(texture.shown)
-            assert(color[1] == expected[2] and color[2] == expected[3] and color[3] == expected[4])
+            assertColor(state.textures[#state.textures], expected[2], expected[3], expected[4])
         end
     end
     assert(#state.textures == 2)

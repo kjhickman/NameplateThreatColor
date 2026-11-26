@@ -89,16 +89,9 @@ end)
 
 test("a single requirements note appears above the role and color settings", function()
     local panel = state.category.frame
-    local notes = {}
-    for _, frame in ipairs(state.uiFrames) do
-        local initializer = frame.initializer
-        if initializer and initializer.template == "SettingsListSectionHeaderTemplate" then
-            notes[#notes + 1] = initializer
-        end
-    end
-    assert(#notes == 1)
+    assert(#panel.fontStrings == 2)
     assert(
-        notes[1].data.name
+        panel.fontStrings[2].text
             == "Requires a party or raid and Nameplates > Aggro Display > Health Bar Color enabled."
     )
     local keys = {
@@ -626,7 +619,11 @@ test("disabled Health Bar Color waits for CVars to load before prompting", funct
     state.onVariablesLoaded()
     assert(state.prompt and state.prompt:IsShown())
     assert(
-        state.prompt.fontString.text:find("Nameplates > Aggro Display > Health Bar Color", 1, true)
+        state.prompt.fontStrings[1].text:find(
+            "Nameplates > Aggro Display > Health Bar Color",
+            1,
+            true
+        )
     )
     assert(not promptControl("Don't show this again"):GetChecked())
     assert(promptControl("Enable") and promptControl("Dismiss"))
@@ -696,7 +693,7 @@ end)
 
 test("the canvas header provides a Defaults button that resets all settings", function()
     local panel = state.category.frame
-    assert(panel.fontString.text == "NameplateThreatColor")
+    assert(panel.fontStrings[1].text == "NameplateThreatColor")
     assert(panel.textures[1].atlas == "Options_HorizontalDivider")
 
     local defaultsButton = findChild(panel, SETTINGS_DEFAULTS)

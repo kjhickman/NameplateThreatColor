@@ -142,12 +142,7 @@ local function GetThreatColor(frame)
     -- Tanks: 0 = safe lead, 1/2 = weaker leads, 3 = unsafe/not highest threat.
     -- Non-tanks: 0 = low threat, 1 = high threat/no aggro, 2 = aggro/not highest
     -- threat, 3 = aggro/highest threat. Highest threat does not guarantee actual aggro.
-    local status
-    if isTank then
-        status = UnitThreatLeadSituation("player", unit)
-    else
-        status = UnitThreatSituation("player", unit)
-    end
+    local status = (isTank and UnitThreatLeadSituation or UnitThreatSituation)("player", unit)
     if issecretvalue(status) then
         return
     end
